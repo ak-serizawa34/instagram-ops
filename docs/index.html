@@ -3,13 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Instagram運用</title>
+<title>ナガレ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="login" class="login" hidden>
   <form id="login-form">
-    <h1>Instagram運用</h1>
+    <h1 class="logo">ナガレ</h1>
     <label>メールアドレス<input type="email" name="email" required autocomplete="email"></label>
     <button class="btn primary" type="submit">ログイン用のリンクを送る</button>
     <p class="muted" id="login-msg"></p>
@@ -17,8 +20,9 @@
 </div>
 
 <div id="app" hidden>
-  <header>
-    <div class="header-row">
+  <header class="site-header">
+    <div class="bar">
+      <span class="logo">ナガレ</span>
       <nav class="accounts" id="accounts"></nav>
       <button class="link" id="logout">ログアウト</button>
     </div>

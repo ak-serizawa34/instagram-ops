@@ -106,80 +106,99 @@ async function deleteBench(id) {
 // ---- 描画 ----
 
 function render() {
+  // アカウント切り替え：アイコン＋名前
   $('accounts').innerHTML = state.accounts.map(a =>
-    `<button class="${a.id === state.account ? 'active' : ''}" data-account="${a.id}">${esc(a.label)}</button>`).join('');
+    `<button class="${a.id === state.account ? 'active' : ''}" data-account="${a.id}">${avatar(a.label, a.avatar_path)}${esc(a.label)}</button>`).join('');
   $('views').innerHTML = VIEWS.map(v =>
     `<button class="${v.key === state.view ? 'active' : ''}" data-view="${v.key}">${v.label}</button>`).join('');
 
   const err = state.error ? `<div class="error">${esc(state.error)}</div>` : '';
   if (!state.account) {
-    $('main').innerHTML = err + '<p class="muted">見られるアカウントがありません。管理者にメンバー登録を依頼してください。</p>';
+    $('main').innerHTML = err + '<p class="empty">見られるアカウントがありません。管理者にメンバー登録を依頼してください。</p>';
     return;
   }
-  $('main').innerHTML = err + renderAccountHead() + (state.view === 'bench' ? renderBench()
+  $('main').innerHTML = err + renderProfile() + (state.view === 'bench' ? renderBench()
     : '<div class="placeholder">この画面は準備中です</div>');
 }
 
 // 選んでいる自分たちのアカウント（アイコン・名前・ハンドル → Instagramへ）
-function renderAccountHead() {
+function renderProfile() {
   const a = state.accounts.find(x => x.id === state.account);
   const href = igUrl('', a.handle);
-  const inner = `${avatar(a.label, a.avatar_path)}
-    <span><strong>${esc(a.label)}</strong> <span class="muted">${a.handle ? '@' + esc(a.handle) : ''}</span></span>`;
-  return href
-    ? `<a class="account-head" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>`
-    : `<div class="account-head">${inner}</div>`;
+  return `
+    <section class="profile">
+      ${avatar(a.label, a.avatar_path)}
+      <div>
+        <h1 class="profile-name">${esc(a.label)}</h1>
+        ${href ? `<a class="profile-handle" href="${esc(href)}" target="_blank" rel="noopener">@${esc(a.handle)}　Instagramを開く ↗</a>` : ''}
+      </div>
+    </section>`;
 }
 
 function renderBench() {
   const list = state.bench.filter(b => state.priority === 'すべて' || b.priority === state.priority);
   const filter = ['すべて', 'A', 'B'].map(p =>
     `<button class="${p === state.priority ? 'active' : ''}" data-priority="${p}">${p}</button>`).join('');
-  const adding = state.editing === 'new' ? `<div class="item">${renderForm({})}</div>` : '';
+  const adding = state.editing === 'new' ? `<article class="card editing">${renderForm({})}</article>` : '';
   return `
+    <div class="section-head">
+      <h2 class="section-title">ベンチマーク<small>${state.bench.length}件</small></h2>
+      <button class="btn primary" data-act="add">追加する</button>
+    </div>
+    <div class="legend">
+      <div><span class="badge a">A</span>毎週確認したい主要なベンチマーク</div>
+      <div><span class="badge b">B</span>企画のテーマに応じて参照する補助的なベンチマーク</div>
+      <div class="note">フォロワー数ではなく、事業の目的に合うかどうかで分けています。</div>
+    </div>
     <div class="toolbar">
       <div class="filter">${filter}</div>
-      <button class="btn primary" data-act="add">追加</button>
     </div>
-    <div class="list">
+    <div class="grid">
       ${adding}
-      ${list.length ? list.map(renderItem).join('') : '<p class="muted">まだありません</p>'}
+      ${list.length ? list.map(renderCard).join('') : '<p class="empty">まだありません</p>'}
     </div>`;
 }
 
-function renderItem(b) {
-  if (state.editing === b.id) return `<div class="item">${renderForm(b)}</div>`;
+function renderCard(b, i) {
+  if (state.editing === b.id) return `<article class="card editing">${renderForm(b)}</article>`;
   const ig = igUrl(b.url, b.handle);
   const name = b.url && !ig ? `<a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name);
-  const rows = [['運用の特徴', b.feature], ['取り入れる点', b.adopt], ['注意点', b.caution]]
-    .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('');
+  const notes = [['運用の特徴', b.feature], ['注意点', b.caution]]
+    .filter(r => r[1]).map(r => `<div><dt>${r[0]}</dt><dd>${esc(r[1])}</dd></div>`).join('');
   const who = b.updated_at
-    ? `更新：${esc(b.updater?.email || '不明')}（${fmt(b.updated_at)}）`
-    : `追加：${esc(b.creator?.email || '取り込み')}（${fmt(b.created_at)}）`;
+    ? `更新 ${esc(b.updater?.email || '不明')}・${fmt(b.updated_at)}`
+    : `追加 ${esc(b.creator?.email || '取り込み')}・${fmt(b.created_at)}`;
   const armed = state.armed === b.id;
+  const badge = b.priority
+    ? `<span class="badge ${b.priority === 'A' ? 'a' : 'b'}" title="${b.priority === 'A' ? '毎週確認したい主要なベンチマーク' : '企画のテーマに応じて参照する補助的なベンチマーク'}">${b.priority}</span>`
+    : '<span class="badge none" title="優先度は未設定">－</span>';
   return `
-    <div class="item">
-      <div class="item-head">
-        <span class="badge ${b.priority ? '' : 'none'}">${esc(b.priority || '－')}</span>
+    <article class="card" style="animation-delay:${Math.min(i, 12) * 30}ms">
+      <div class="card-top">
         ${avatar(b.name, b.avatar_path)}
-        <span class="item-name">${name}</span>
-        <span class="muted">${esc(b.handle)}</span>
-        ${b.area ? `<span class="area">${esc(b.area)}</span>` : ''}
-        ${ig ? `<a class="ig-link" href="${esc(ig)}" target="_blank" rel="noopener">Instagramを開く</a>` : ''}
+        <div class="card-id">
+          <h3 class="card-name">${name}</h3>
+          <div class="card-handle">${esc(b.handle)}</div>
+        </div>
+        ${badge}
       </div>
-      ${rows ? `<dl>${rows}</dl>` : ''}
-      <div class="item-foot">
+      ${b.area ? `<span class="area">${esc(b.area)}</span>` : ''}
+      ${b.adopt ? `<dl class="notes"><div><dt>取り入れる点</dt><dd class="adopt">${esc(b.adopt)}</dd></div></dl>` : ''}
+      ${notes ? `<dl class="notes">${notes}</dl>` : ''}
+      <div class="card-foot">
         <span>${who}</span>
         <span class="actions">
-          <button class="btn" data-act="edit" data-id="${b.id}">編集</button>
-          <button class="btn danger ${armed ? 'armed' : ''}" data-act="delete" data-id="${b.id}">${armed ? 'もう一度押すと削除' : '削除'}</button>
+          ${ig ? `<a class="ig-link" href="${esc(ig)}" target="_blank" rel="noopener">Instagram ↗</a>` : ''}
+          <button class="btn small" data-act="edit" data-id="${b.id}">編集</button>
+          <button class="btn small danger ${armed ? 'armed' : ''}" data-act="delete" data-id="${b.id}">${armed ? 'もう一度で削除' : '削除'}</button>
         </span>
       </div>
-    </div>`;
+    </article>`;
 }
 
 function renderForm(b) {
-  const opt = p => `<option value="${p}" ${(b.priority || '') === p ? 'selected' : ''}>${p || '未設定'}</option>`;
+  const labels = { '': '未設定', A: 'A：毎週確認したい主要なもの', B: 'B：企画に応じて参照する補助的なもの' };
+  const opt = p => `<option value="${p}" ${(b.priority || '') === p ? 'selected' : ''}>${labels[p]}</option>`;
   return `
     <form class="edit" data-id="${esc(b.id || '')}">
       <div class="row2">
@@ -194,10 +213,10 @@ function renderForm(b) {
       <label>運用の特徴<textarea name="feature">${esc(b.feature)}</textarea></label>
       <label>取り入れる点<textarea name="adopt">${esc(b.adopt)}</textarea></label>
       <label>注意点<textarea name="caution">${esc(b.caution)}</textarea></label>
-      <div class="item-foot"><span></span><span class="actions">
+      <div class="form-actions">
         <button type="button" class="btn" data-act="cancel">やめる</button>
-        <button type="submit" class="btn primary">保存</button>
-      </span></div>
+        <button type="submit" class="btn primary">保存する</button>
+      </div>
     </form>`;
 }
 
