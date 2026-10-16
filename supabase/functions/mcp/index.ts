@@ -5,18 +5,21 @@
 // を登録する。key（合言葉）は秘密設定 MCP_TOKEN と照合する。URLはリポジトリや画面に出さない
 //
 // MCPの「Streamable HTTP」を、POSTでJSONを返す最小の形で実装している
-// 必要な秘密設定：MCP_TOKEN（Manus用の合言葉）、MCP_TOKEN_CLAUDE（Claude Code用の合言葉）、MCP_USER_ID（書き込みを誰の作業として残すか＝芹澤さんのprofiles.id）
+// 必要な秘密設定：MCP_TOKEN（Manus用の合言葉）、MCP_TOKEN_CLAUDE（Claude Code用）、MCP_TOKEN_ASA（ASAさんのManus用・愛鷹テロワールだけ）、MCP_USER_ID_ASA（ASAさんのprofiles.id）、MCP_USER_ID（書き込みを誰の作業として残すか＝芹澤さんのprofiles.id）
 
 import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 // 合言葉はつなぐ先ごとに分ける。どこからの書き込みかを記録に残すため
+// accounts：使えるアカウント（null は全部）。user：書き込みを誰の作業として残すか（profiles.id）
+const SERIZAWA = Deno.env.get("MCP_USER_ID") ?? null;
 const CLIENTS = [
-  { token: Deno.env.get("MCP_TOKEN") ?? "", source: "manus", label: "Manus" },
-  { token: Deno.env.get("MCP_TOKEN_CLAUDE") ?? "", source: "claude-code", label: "Claude Code" },
+  { token: Deno.env.get("MCP_TOKEN") ?? "", source: "manus", label: "Manus", accounts: null as string[] | null, user: SERIZAWA },
+  { token: Deno.env.get("MCP_TOKEN_CLAUDE") ?? "", source: "claude-code", label: "Claude Code", accounts: null as string[] | null, user: SERIZAWA },
+  // ASAさん（愛鷹テロワールだけ共有）。MCP_USER_ID_ASA はASAさんがアプリに初めてログインしたあとに設定する
+  { token: Deno.env.get("MCP_TOKEN_ASA") ?? "", source: "manus", label: "Manus（ASA）", accounts: ["ashitaka"], user: Deno.env.get("MCP_USER_ID_ASA") ?? null },
 ].filter((c) => c.token);
 type Client = typeof CLIENTS[number];
-const USER_ID = Deno.env.get("MCP_USER_ID") ?? null;
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // 本文の見出し（## ）を1段下げて、項目の見出しと重ならないようにする
@@ -98,7 +101,8 @@ const TOOLS = [
 
 // ---- 道具の中身 ----
 
-async function account(id: string) {
+async function account(id: string, client: Client) {
+  if (client.accounts && !client.accounts.includes(id)) throw new Error(`このコネクタでは「${id}」は扱えません`);
   const { data } = await db.from("accounts").select("id, label, handle").eq("id", id).single();
   if (!data) throw new Error(`アカウント「${id}」はありません。list_accounts で確認してください`);
   return data;
@@ -111,13 +115,15 @@ async function latestDocs(acc: string) {
 }
 
 const run: Record<string, (a: any, client: Client) => Promise<string>> = {
-  async list_accounts() {
-    const { data } = await db.from("accounts").select("id, label, handle").order("sort");
+  async list_accounts(_a, client) {
+    let q = db.from("accounts").select("id, label, handle");
+    if (client.accounts) q = q.in("id", client.accounts);
+    const { data } = await q.order("sort");
     return (data ?? []).map((a) => `- ${a.id}：${a.label}（@${a.handle}）`).join("\n");
   },
 
-  async get_account_design({ account: id }) {
-    const a = await account(id);
+  async get_account_design({ account: id }, client) {
+    const a = await account(id, client);
     const docs = await latestDocs(id);
     const pick = (s: string) => docs.find((d) => d.section === s);
     const out = [`# ${a.label}（@${a.handle}）の設計（Insta Studio の最新版）`];
@@ -133,8 +139,8 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     return out.join("\n\n");
   },
 
-  async get_benchmarks({ account: id, priority }) {
-    await account(id);
+  async get_benchmarks({ account: id, priority }, client) {
+    await account(id, client);
     let q = db.from("benchmarks").select("priority, name, handle, url, area, feature, adopt, caution").eq("account_id", id);
     if (priority) q = q.eq("priority", priority);
     const { data } = await q.order("priority", { nullsFirst: false });
@@ -142,8 +148,8 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       `- [${b.priority ?? "－"}] ${b.name} ${b.handle ?? ""}｜${b.area ?? ""}\n  特徴：${b.feature ?? ""}\n  取り入れる点：${b.adopt ?? ""}\n  注意点：${b.caution ?? ""}`).join("\n");
   },
 
-  async list_posts({ account: id, limit }) {
-    await account(id);
+  async list_posts({ account: id, limit }, client) {
+    await account(id, client);
     const { data } = await db.from("posts")
       .select("id, title, format, status, caption, permalink, notes, created_at, posted_at")
       .eq("account_id", id).order("created_at", { ascending: false }).limit(limit ?? 20);
@@ -152,8 +158,8 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       `- ${p.created_at.slice(0, 10)}［${p.status}］${p.title ?? "無題"}（id: ${p.id}）${p.permalink ? `\n  ${p.permalink}` : ""}${p.caption ? `\n  キャプション冒頭：${p.caption.slice(0, 60)}` : ""}`).join("\n");
   },
 
-  async save_design({ account: id, section, body, title, format, pages, canva_url }) {
-    await account(id);
+  async save_design({ account: id, section, body, title, format, pages, canva_url }, client) {
+    await account(id, client);
     const base: Record<string, string> = { worldview: "世界観", profile: "概要欄", strategy: "戦略" };
     const isFormat = section.startsWith("format:");
     if (!isFormat && !base[section]) throw new Error("section は worldview／profile／strategy／format:<名前> のどれかです");
@@ -166,14 +172,14 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       title = title ?? prev?.title ?? section.slice(7);
     }
     const { error } = await db.from("account_doc_versions").insert({
-      account_id: id, section, title: isFormat ? title : base[section], body, meta, created_by: USER_ID,
+      account_id: id, section, title: isFormat ? title : base[section], body, meta, created_by: client.user,
     });
     if (error) throw new Error(error.message);
     return `保存しました（${isFormat ? title : base[section]}）。Insta Studio の戦略タブで、前の版は履歴から見られます`;
   },
 
   async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes }, client) {
-    await account(id);
+    await account(id, client);
     let section: string | null = null;
     if (format_name) {
       const f = (await latestDocs(id)).find((d) => d.section.startsWith("format:") && d.title === format_name);
@@ -187,7 +193,7 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     if (hashtags !== undefined) fields.hashtags = hashtags;
     if (permalink !== undefined) fields.permalink = permalink;
     if (notes !== undefined) fields.notes = notes;
-    if (status === "approved") { fields.approved_by = USER_ID; fields.approved_at = new Date().toISOString(); }
+    if (status === "approved") { fields.approved_by = client.user; fields.approved_at = new Date().toISOString(); }
     if (status === "posted") fields.posted_at = new Date().toISOString();
 
     let id2 = post_id;
@@ -196,12 +202,12 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       if (error) throw new Error(error.message);
     } else {
       const { data, error } = await db.from("posts")
-        .insert({ ...fields, account_id: id, source: client.source, created_by: USER_ID }).select("id").single();
+        .insert({ ...fields, account_id: id, source: client.source, created_by: client.user }).select("id").single();
       if (error) throw new Error(error.message);
       id2 = data.id;
     }
     await db.from("post_logs").insert({
-      post_id: id2, account_id: id, action: post_id ? status : "created", note: `${client.label}から`, created_by: USER_ID,
+      post_id: id2, account_id: id, action: post_id ? status : "created", note: `${client.label}から`, created_by: client.user,
     });
     return `記録しました（post_id: ${id2}）。状態が進んだら、この post_id を付けて record_post を呼んでください`;
   },
