@@ -315,3 +315,9 @@ textarea { min-height: 72px; resize: vertical; }
 .jump-link:hover { background: var(--accent); color: #fff; }
 .manus-url { margin: 12px 0 18px; }
 @media (max-width: 640px) { .jump { order: 2; } }
+
+/* フォーマットの見本画像 */
+.previews { display: flex; gap: 12px; overflow-x: auto; padding: 6px 2px 14px; margin: 6px 0 4px; }
+.preview { height: 260px; width: auto; aspect-ratio: 4 / 5; object-fit: cover; flex: none; border-radius: 10px;
+  background: var(--soft); box-shadow: 0 10px 28px -16px rgba(28, 27, 25, .35); }
+@media (max-width: 640px) { .preview { height: 200px; } }

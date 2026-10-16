@@ -90,7 +90,8 @@ function manusInstruction() {
   return `このプロジェクトは「${a.label}」${a.handle ? `（@${a.handle}）` : ""}のInstagram運用です。
 - 作業の前に、Insta Studio コネクタの get_account_design（account: ${a.id}）で設計を読み、フォーマットとルールに従ってください
 - 新しい投稿を考えるときは list_posts で過去の投稿を見て、重複を避けてください。参考には get_benchmarks を使えます
-- 画像はCanvaで作ってください。フォーマットにCanvaのテンプレートがあれば、それを複製して文字・写真を差し替えます
+- 画像はCanvaで作ってください。フォーマットにCanvaのテンプレートがあれば、それを複製して文字・写真を差し替えます（テンプレートの元デザインは直接使わない）
+- テンプレートそのものを作った・直したときは、各ページをPNGで書き出し、save_template_preview で見本画像とテンプレートのリンクを保存してください
 - 公開する前に、必ず下書き（画像・キャプション・ハッシュタグ）を見せて、確認を取ってください
 - 素材にない事実・数字・日付・固有名詞・人の発言を作らないでください。足りなければ質問してください
 - 下書きを作ったら record_post（status: draft）、確認が取れたら approved、公開したら posted と投稿のURLで記録してください
@@ -156,6 +157,7 @@ function renderStrategyMain() {
       </div>
     </div>
     ${metaLine}
+    ${isFormat && doc?.meta?.previews?.length ? `<div class="previews">${doc.meta.previews.map(p => `<img class="preview" data-preview="${esc(p)}" alt="">`).join('')}</div>` : ''}
     <div class="doc-body">${renderBody(doc?.body || '')}</div>
     ${doc ? `<p class="muted small doc-foot">最終更新 ${esc(who(doc.created_by))}・${fmt(doc.created_at)}</p>` : ''}`;
 }
@@ -192,6 +194,14 @@ async function saveStrategy(form) {
   check(await db.from('account_doc_versions').insert(row));
   strategy.editing = false;
   await loadStrategy();
+}
+
+// 見本画像（非公開の media バケット）を、署名付きURLで表示する
+async function showPreviews() {
+  const imgs = [...document.querySelectorAll('img[data-preview]')];
+  if (!imgs.length) return;
+  const urls = await photoUrls(imgs.map(i => i.dataset.preview));
+  imgs.forEach((img, i) => { img.src = urls[i]; });
 }
 
 async function saveManusUrl(form) {

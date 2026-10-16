@@ -221,6 +221,7 @@ function render() {
   $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
   drawCanvases();
   if (state.view === 'create') afterStudioRender();
+  if (state.view === 'strategy') showPreviews().catch(() => {});
 }
 
 // 選んでいる自分たちのアカウント（アイコン・名前・ハンドル → Instagramへ）

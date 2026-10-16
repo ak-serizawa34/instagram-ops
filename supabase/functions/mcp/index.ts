@@ -97,7 +97,25 @@ const TOOLS = [
       required: ["account", "status"], additionalProperties: false,
     },
   },
+  {
+    name: "save_template_preview",
+    description: "フォーマットのCanvaテンプレートを作った・直したあとに使う。Canvaで書き出した各ページの画像URL（PNG/JPG、ページ順）を渡すと、Insta Studioに見本画像として保存し、テンプレートのリンクも記録する（前の版は履歴に残る）",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: ACCOUNT,
+        section: { type: "string", description: "フォーマットの section（例：format:A）。get_account_design で確認できる" },
+        image_urls: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10, description: "Canvaで書き出したページ画像のURL（ページ順）" },
+        canva_url: { type: "string", description: "テンプレートのCanvaデザインのリンク" },
+        note: { type: "string", description: "何を変えたか（履歴に残す）" },
+      },
+      required: ["account", "section", "image_urls"], additionalProperties: false,
+    },
+  },
 ];
+
+// 見本画像を取りに行ってよい場所（Canvaの書き出し先）
+const PREVIEW_HOSTS = [/\.canva\.com$/, /^document-export.*\.amazonaws\.com$/, /^s3\.amazonaws\.com$/];
 
 // ---- 道具の中身 ----
 
@@ -178,6 +196,34 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     return `保存しました（${isFormat ? title : base[section]}）。Insta Studio の戦略タブで、前の版は履歴から見られます`;
   },
 
+  async save_template_preview({ account: id, section, image_urls, canva_url, note }, client) {
+    await account(id, client);
+    const prev = (await latestDocs(id)).find((d) => d.section === section);
+    if (!prev || !section.startsWith("format:")) throw new Error(`フォーマット「${section}」がありません。get_account_design で section を確認してください`);
+    const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+    const previews: string[] = [];
+    for (let i = 0; i < image_urls.length; i++) {
+      const url = new URL(image_urls[i]);
+      if (url.protocol !== "https:" || !PREVIEW_HOSTS.some((h) => h.test(url.hostname))) {
+        throw new Error(`Canvaで書き出した画像のURLを渡してください（${url.hostname} は受け付けません）`);
+      }
+      const res = await fetch(url);
+      const type = res.headers.get("content-type") ?? "";
+      if (!res.ok || !/^image\/(png|jpeg)/.test(type)) throw new Error(`${i + 1}ページ目の画像を取得できませんでした`);
+      const path = `${id}/templates/${section.slice(7)}_${stamp}_${i + 1}.${type.includes("png") ? "png" : "jpg"}`;
+      const { error } = await db.storage.from("media").upload(path, await res.arrayBuffer(), { contentType: type });
+      if (error) throw new Error(error.message);
+      previews.push(path);
+    }
+    const meta = { ...prev.meta, previews, ...(canva_url ? { canva_url } : {}) };
+    const body = note ? `${prev.body.trim()}\n\n## テンプレートの変更（${new Date().toISOString().slice(0, 10)}）\n- ${note}` : prev.body;
+    const { error } = await db.from("account_doc_versions").insert({
+      account_id: id, section, title: prev.title, body, meta, created_by: client.user,
+    });
+    if (error) throw new Error(error.message);
+    return `見本画像を${previews.length}枚保存しました（${prev.title}）。Insta Studio の戦略タブで見られます`;
+  },
+
   async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes }, client) {
     await account(id, client);
     let section: string | null = null;
@@ -252,7 +298,7 @@ async function handle(msg: any, client: Client) {
       protocolVersion: v,
       capabilities: { tools: {} },
       serverInfo: { name: "insta-studio", version: "0.2.0" },
-      instructions: "Insta Studio（Instagram運用の設計の置き場）。投稿を作る・提案する前に get_account_design で設計を読み、フォーマットとルールに従う。画像はCanvaで、フォーマットのCanvaテンプレートを複製して作る。決定事項は save_design、作成・公開した投稿は record_post で記録する。",
+      instructions: "Insta Studio（Instagram運用の設計の置き場）。投稿を作る・提案する前に get_account_design で設計を読み、フォーマットとルールに従う。画像はCanvaで、フォーマットのCanvaテンプレートを複製して作る。テンプレートそのものを作った・直したときは、各ページをPNGで書き出して save_template_preview で見本とリンクを保存する。決定事項は save_design、作成・公開した投稿は record_post で記録する。",
     });
   }
   if (method === "ping") return ok({});
