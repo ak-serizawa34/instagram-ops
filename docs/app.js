@@ -20,6 +20,22 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// アイコン：画像があれば表示、なければ名前の頭文字の丸
+function avatar(name, path) {
+  if (path) {
+    const src = `${APP_CONFIG.supabaseUrl}/storage/v1/object/public/avatars/${encodeURI(path)}`;
+    return `<img class="avatar" src="${esc(src)}" alt="" loading="lazy">`;
+  }
+  return `<span class="avatar">${esc((name || '?').trim().charAt(0))}</span>`;
+}
+
+// InstagramのページURL：URL欄がInstagramならそれ、なければハンドルから作る
+function igUrl(url, handle) {
+  if (url && /instagram\.com/.test(url)) return url;
+  const h = (handle || '').replace(/^@/, '').trim();
+  return h ? `https://www.instagram.com/${h}/` : '';
+}
+
 function fmt(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -55,7 +71,7 @@ db.auth.onAuthStateChange((_event, session) => {
 async function start() {
   try {
     // RLSにより、メンバーになっているアカウントだけが返ってくる
-    state.accounts = check(await db.from('accounts').select('id, label').order('sort'));
+    state.accounts = check(await db.from('accounts').select('id, label, handle, avatar_path').order('sort'));
     state.account = state.accounts.length ? state.accounts[0].id : null;
     if (state.account) await loadBench();
   } catch (e) { state.error = e.message; }
@@ -100,8 +116,19 @@ function render() {
     $('main').innerHTML = err + '<p class="muted">見られるアカウントがありません。管理者にメンバー登録を依頼してください。</p>';
     return;
   }
-  $('main').innerHTML = err + (state.view === 'bench' ? renderBench()
+  $('main').innerHTML = err + renderAccountHead() + (state.view === 'bench' ? renderBench()
     : '<div class="placeholder">この画面は準備中です</div>');
+}
+
+// 選んでいる自分たちのアカウント（アイコン・名前・ハンドル → Instagramへ）
+function renderAccountHead() {
+  const a = state.accounts.find(x => x.id === state.account);
+  const href = igUrl('', a.handle);
+  const inner = `${avatar(a.label, a.avatar_path)}
+    <span><strong>${esc(a.label)}</strong> <span class="muted">${a.handle ? '@' + esc(a.handle) : ''}</span></span>`;
+  return href
+    ? `<a class="account-head" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>`
+    : `<div class="account-head">${inner}</div>`;
 }
 
 function renderBench() {
@@ -122,7 +149,8 @@ function renderBench() {
 
 function renderItem(b) {
   if (state.editing === b.id) return `<div class="item">${renderForm(b)}</div>`;
-  const name = b.url ? `<a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name);
+  const ig = igUrl(b.url, b.handle);
+  const name = b.url && !ig ? `<a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name);
   const rows = [['運用の特徴', b.feature], ['取り入れる点', b.adopt], ['注意点', b.caution]]
     .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('');
   const who = b.updated_at
@@ -133,9 +161,11 @@ function renderItem(b) {
     <div class="item">
       <div class="item-head">
         <span class="badge ${b.priority ? '' : 'none'}">${esc(b.priority || '－')}</span>
+        ${avatar(b.name, b.avatar_path)}
         <span class="item-name">${name}</span>
         <span class="muted">${esc(b.handle)}</span>
         ${b.area ? `<span class="area">${esc(b.area)}</span>` : ''}
+        ${ig ? `<a class="ig-link" href="${esc(ig)}" target="_blank" rel="noopener">Instagramを開く</a>` : ''}
       </div>
       ${rows ? `<dl>${rows}</dl>` : ''}
       <div class="item-foot">

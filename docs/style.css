@@ -46,10 +46,19 @@ textarea { min-height: 64px; resize: vertical; }
 .placeholder { background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 32px; text-align: center; color: var(--muted); }
 .error { background: #fbeeea; color: var(--danger); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
 
+/* アイコンとアカウント */
+.avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; object-fit: cover;
+  display: inline-grid; place-items: center; background: #eeeee9; color: var(--muted);
+  font-weight: 700; font-size: 15px; align-self: center; }
+.account-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  color: inherit; text-decoration: none; width: fit-content; }
+a.account-head:hover strong { text-decoration: underline; }
+.ig-link { margin-left: auto; font-size: 13px; color: var(--accent); white-space: nowrap; }
+
 /* ベンチマーク */
 .list { display: grid; gap: 10px; }
 .item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
-.item-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.item-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .badge { display: inline-block; min-width: 26px; text-align: center; border-radius: 6px; padding: 0 6px;
   font-size: 13px; font-weight: 700; background: var(--accent-soft); color: var(--accent); }
 .badge.none { background: #eeeee9; color: var(--muted); }
