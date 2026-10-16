@@ -90,6 +90,7 @@ function manusInstruction() {
   return `このプロジェクトは「${a.label}」${a.handle ? `（@${a.handle}）` : ""}のInstagram運用です。
 - 作業の前に、Insta Studio コネクタの get_account_design（account: ${a.id}）で設計を読み、フォーマットとルールに従ってください
 - 新しい投稿を考えるときは list_posts で過去の投稿を見て、重複を避けてください。参考には get_benchmarks を使えます
+- 画像はCanvaで作ってください。フォーマットにCanvaのテンプレートがあれば、それを複製して文字・写真を差し替えます
 - 公開する前に、必ず下書き（画像・キャプション・ハッシュタグ）を見せて、確認を取ってください
 - 素材にない事実・数字・日付・固有名詞・人の発言を作らないでください。足りなければ質問してください
 - 下書きを作ったら record_post（status: draft）、確認が取れたら approved、公開したら posted と投稿のURLで記録してください
@@ -128,7 +129,8 @@ function renderStrategyMain() {
         <div class="row2">
           <label>形<select name="format">${Object.entries(FORMAT_KIND).map(([k, l]) => `<option value="${k}" ${meta.format === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label>ページ数<input name="pages" type="number" min="1" max="10" value="${esc(meta.pages || 1)}"></label>
-        </div>` : `<h3 class="block-title">${esc(title)}</h3>`}
+        </div>
+        <label>Canvaのテンプレート（デザインのリンク）<input name="canva_url" type="url" value="${esc(meta.canva_url || "")}" placeholder="https://www.canva.com/d/..."></label>` : `<h3 class="block-title">${esc(title)}</h3>`}
         <label>中身（「## 」で見出し、「- 」で箇条書き）<textarea name="body" rows="22">${esc(doc?.body || '')}</textarea></label>
         <div class="form-actions">
           ${isFormat && doc ? `<button type="button" class="btn small danger ${strategy.armed ? 'armed' : ''}" data-act="sg-delete">${strategy.armed ? 'もう一度で削除' : 'このフォーマットを削除'}</button>` : ''}
@@ -138,7 +140,7 @@ function renderStrategyMain() {
       </form>`;
   }
 
-  const metaLine = isFormat && doc ? `<p class="muted small">${FORMAT_KIND[doc.meta.format] || ''}・${doc.meta.pages || ''}ページ</p>` : '';
+  const metaLine = isFormat && doc ? `<p class="muted small">${FORMAT_KIND[doc.meta.format] || ''}・${doc.meta.pages || ''}ページ${doc.meta.canva_url ? `　<a class="ig-link" href="${esc(doc.meta.canva_url)}" target="_blank" rel="noopener">Canvaのテンプレート ↗</a>` : '　<span>Canvaのテンプレート：未設定</span>'}</p>` : '';
   return `
     <div class="doc-head">
       <h3 class="doc-title">${esc(title)}</h3>
@@ -178,7 +180,7 @@ async function saveStrategy(form) {
     section: strategy.section,
     title: isFormat ? f.title.trim() : base.title,
     body: f.body,
-    meta: isFormat ? { format: f.format, pages: Number(f.pages) || 1 } : {},
+    meta: isFormat ? { format: f.format, pages: Number(f.pages) || 1, ...(f.canva_url.trim() ? { canva_url: f.canva_url.trim() } : {}) } : {},
   };
   if (!row.title) throw new Error('名前を入れてください');
   check(await db.from('account_doc_versions').insert(row));

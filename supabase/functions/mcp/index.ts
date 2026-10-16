@@ -69,6 +69,7 @@ const TOOLS = [
         title: { type: "string", description: "フォーマットの名前（フォーマットのときだけ）" },
         format: { type: "string", enum: ["carousel", "story", "reel"], description: "フォーマットの形（フォーマットのときだけ）" },
         pages: { type: "integer", minimum: 1, maximum: 10, description: "フォーマットのページ数（フォーマットのときだけ）" },
+        canva_url: { type: "string", description: "フォーマットのCanvaテンプレート（デザインのリンク）。フォーマットのときだけ" },
       },
       required: ["account", "section", "body"], additionalProperties: false,
     },
@@ -127,7 +128,7 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     const formats = docs.filter((d) => d.section.startsWith("format:")).sort((x, y) => x.section.localeCompare(y.section));
     out.push(`## フォーマット（${formats.length}件）`);
     for (const f of formats) {
-      out.push(`### ${f.title}（${FORMAT_KIND[f.meta?.format] ?? ""}・${f.meta?.pages ?? ""}ページ）［section: ${f.section}］\n${demote(f.body, "####")}`);
+      out.push(`### ${f.title}（${FORMAT_KIND[f.meta?.format] ?? ""}・${f.meta?.pages ?? ""}ページ）［section: ${f.section}］\nCanvaのテンプレート：${f.meta?.canva_url ?? "未設定（必要なら利用者に聞く）"}\n${demote(f.body, "####")}`);
     }
     return out.join("\n\n");
   },
@@ -151,7 +152,7 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       `- ${p.created_at.slice(0, 10)}［${p.status}］${p.title ?? "無題"}（id: ${p.id}）${p.permalink ? `\n  ${p.permalink}` : ""}${p.caption ? `\n  キャプション冒頭：${p.caption.slice(0, 60)}` : ""}`).join("\n");
   },
 
-  async save_design({ account: id, section, body, title, format, pages }) {
+  async save_design({ account: id, section, body, title, format, pages, canva_url }) {
     await account(id);
     const base: Record<string, string> = { worldview: "世界観", profile: "概要欄", strategy: "戦略" };
     const isFormat = section.startsWith("format:");
@@ -160,6 +161,8 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     if (isFormat) {
       const prev = (await latestDocs(id)).find((d) => d.section === section);
       meta = { format: format ?? prev?.meta?.format ?? "carousel", pages: pages ?? prev?.meta?.pages ?? 1 };
+      const canva = canva_url ?? prev?.meta?.canva_url;
+      if (canva) meta = { ...meta, canva_url: canva };
       title = title ?? prev?.title ?? section.slice(7);
     }
     const { error } = await db.from("account_doc_versions").insert({
@@ -243,7 +246,7 @@ async function handle(msg: any, client: Client) {
       protocolVersion: v,
       capabilities: { tools: {} },
       serverInfo: { name: "insta-studio", version: "0.2.0" },
-      instructions: "Insta Studio（Instagram運用の設計の置き場）。投稿を作る・提案する前に get_account_design で設計を読み、フォーマットとルールに従う。決定事項は save_design、作成・公開した投稿は record_post で記録する。",
+      instructions: "Insta Studio（Instagram運用の設計の置き場）。投稿を作る・提案する前に get_account_design で設計を読み、フォーマットとルールに従う。画像はCanvaで、フォーマットのCanvaテンプレートを複製して作る。決定事項は save_design、作成・公開した投稿は record_post で記録する。",
     });
   }
   if (method === "ping") return ok({});
