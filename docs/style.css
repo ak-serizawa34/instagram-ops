@@ -337,3 +337,60 @@ textarea { min-height: 72px; resize: vertical; }
 .link-chip::before { content: "↗ "; color: var(--accent); }
 .link-chip.edit { background: none; border-style: dashed; color: var(--muted); }
 .link-chip.edit::before { content: ""; }
+
+/* ==== ホーム（運用の流れ・AIの使い分け） ==== */
+.guide-hero { margin: -12px 0 40px; }
+.guide-lead { font-family: var(--mincho); font-size: 22px; line-height: 1.9; margin: 0; }
+.guide-lead strong { color: var(--accent); font-weight: 700; }
+.guide-section { margin-bottom: 52px; }
+.guide-section .section-title { padding-bottom: 14px; border-bottom: 1px solid var(--ink); margin-bottom: 20px; font-size: 24px; }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; counter-reset: step; }
+.step { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 16px 16px;
+  display: flex; flex-direction: column; gap: 8px; animation: rise .5s var(--ease) both; }
+.step:nth-child(2) { animation-delay: 60ms; } .step:nth-child(3) { animation-delay: 120ms; }
+.step:nth-child(4) { animation-delay: 180ms; } .step:nth-child(5) { animation-delay: 240ms; }
+.step:not(:last-child)::after { content: ""; position: absolute; right: -9px; top: 34px; width: 6px; height: 6px;
+  border-top: 1px solid var(--muted); border-right: 1px solid var(--muted); transform: rotate(45deg); }
+.step-no { font-family: var(--mincho); font-size: 30px; line-height: 1; color: var(--accent); }
+.step-body { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.step-head { display: flex; flex-direction: column; gap: 2px; }
+.step-head strong { font-family: var(--mincho); font-size: 17px; }
+.step-who { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.step p { margin: 0; font-size: 13px; line-height: 1.75; flex: 1; }
+.step-link { align-self: flex-start; margin-top: 4px; font: inherit; font-size: 12px; color: var(--accent); background: none; border: 0;
+  padding: 0; cursor: pointer; text-decoration: none; border-bottom: 1px solid transparent; }
+.step-link:hover { border-bottom-color: var(--accent); }
+
+.ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.ai-card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.ai-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ai-head h3 { font-family: var(--mincho); font-size: 22px; margin: 0; }
+.ai-does { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.ai-does li::before { content: "—"; color: var(--accent); margin-right: 8px; }
+.ai-prompts { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.ai-prompts .nav-label { margin: 0 0 2px; }
+.prompt { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; font: inherit; font-size: 13px;
+  line-height: 1.6; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; cursor: pointer;
+  transition: border-color .2s; }
+.prompt:hover { border-color: var(--ink); }
+.prompt em { font-style: normal; font-size: 11px; color: var(--accent); white-space: nowrap; }
+
+.roles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.role { display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 16px; cursor: pointer; transition: border-color .2s, transform .2s var(--ease); }
+.role:hover { border-color: var(--ink); transform: translateY(-2px); }
+.role.static { cursor: default; }
+.role.static:hover { border-color: var(--line); transform: none; }
+.role strong { font-family: var(--mincho); font-size: 16px; }
+.role span { font-size: 12px; color: var(--muted); line-height: 1.7; }
+
+@media (max-width: 960px) {
+  .steps { grid-template-columns: 1fr 1fr; }
+  .step::after { display: none; }
+  .roles { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .steps, .ai-grid, .roles { grid-template-columns: 1fr; }
+  .guide-lead { font-size: 18px; }
+}

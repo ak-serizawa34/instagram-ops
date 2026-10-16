@@ -3,13 +3,14 @@ const db = supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnon
 
 // タブ。作る・公開する（studio.js・publish.js）は、Manusで運用するため 2026-10-16 に外した（v0.1 タグに残っている）
 const VIEWS = [
+  { key: 'home', label: 'ホーム' },
   { key: 'strategy', label: '戦略' },
   { key: 'records', label: '投稿の記録' },
   { key: 'bench', label: 'ベンチマーク' },
 ];
 
 const state = {
-  accounts: [], account: null, view: 'strategy',
+  accounts: [], account: null, view: 'home',
   bench: [], priority: 'すべて', editing: null, armed: null, error: '',
   posts: [],          // 選んでいるアカウントの投稿（作る・公開する で共有）
 };
@@ -215,6 +216,7 @@ function render() {
     create: () => renderStudio(),
     publish: () => renderPublish(),
     bench: () => renderBench(),
+    home: () => renderGuide(),
     strategy: () => renderStrategy(),
     records: () => renderRecords(),
   }[state.view];
