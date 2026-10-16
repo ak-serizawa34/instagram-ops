@@ -63,6 +63,7 @@ function renderStrategy() {
     ...BASE_SECTIONS.map(s => ({ ...s, doc: strategy.docs.find(d => d.section === s.section) })),
   ];
   const navHtml = nav.map(n => navItem(n.section, n.title)).join('')
+    + navItem('links', '資料')
     + '<div class="nav-label">フォーマット</div>'
     + formatDocs().map(d => navItem(d.section, d.title)).join('')
     + '<button class="nav-add" data-act="sg-new-format">＋ フォーマットを足す</button>';
@@ -120,6 +121,7 @@ function renderManusPanel() {
 
 function renderStrategyMain() {
   if (strategy.manus) return renderManusPanel();
+  if (strategy.section === 'links') return renderLinks();
   const base = BASE_SECTIONS.find(s => s.section === strategy.section);
   const doc = currentDoc();
   const isFormat = strategy.section.startsWith('format:');
@@ -202,6 +204,51 @@ async function showPreviews() {
   if (!imgs.length) return;
   const urls = await photoUrls(imgs.map(i => i.dataset.preview));
   imgs.forEach((img, i) => { img.src = urls[i]; });
+}
+
+// ---- 資料：収録台本・音声データなど、Googleドライブのフォルダへのリンク（account_settings.links）----
+
+function renderLinks() {
+  const links = state.settings?.links || [];
+  if (strategy.editing) {
+    const rows = [...links, { label: '', url: '' }, { label: '', url: '' }].map(l => `
+      <div class="row2">
+        <input name="label" value="${esc(l.label)}" placeholder="名前（例：収録台本）">
+        <input name="url" type="url" value="${esc(l.url)}" placeholder="https://drive.google.com/...">
+      </div>`).join('');
+    return `
+      <form class="edit" data-form="sg-links">
+        <h3 class="block-title">資料</h3>
+        <p class="muted small">消したいものは、名前とURLを空にして保存してください。行が足りなければ、保存したあとにもう一度「編集」を押すと空の行が増えます。</p>
+        ${rows}
+        <div class="form-actions">
+          <button type="button" class="btn" data-act="sg-cancel">やめる</button>
+          <button type="submit" class="btn primary">保存する</button>
+        </div>
+      </form>`;
+  }
+  return `
+    <div class="doc-head">
+      <h3 class="doc-title">資料</h3>
+      <div class="actions"><button class="btn small primary" data-act="sg-edit">編集</button></div>
+    </div>
+    <p class="muted small">収録台本や音声データなど、投稿のもとになる資料の置き場所です。Manusもコネクタでこの一覧を読みます。</p>
+    ${links.length
+      ? `<ul class="link-list">${links.map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a></li>`).join('')}</ul>`
+      : '<p class="empty">まだありません。「編集」から足せます。</p>'}`;
+}
+
+async function saveLinks(form) {
+  const fd = new FormData(form);
+  const labels = fd.getAll('label');
+  const urls = fd.getAll('url');
+  const links = labels.map((label, i) => ({ label: label.trim(), url: urls[i].trim() }))
+    .filter(l => l.label || l.url);
+  if (links.some(l => !l.label || !l.url.startsWith('https://'))) throw new Error('名前と、https:// から始まるURLを両方入れてください');
+  state.settings = check(await db.from('account_settings')
+    .upsert({ account_id: state.account, links, updated_at: new Date().toISOString() })
+    .select('*').single());
+  strategy.editing = false;
 }
 
 async function saveManusUrl(form) {

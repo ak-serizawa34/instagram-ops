@@ -362,6 +362,11 @@ $('app').addEventListener('submit', async e => {
   const form = e.target;
   // 作る のチャット送信
   if (form.dataset.form === 'st-send') return studioSend(form);
+  // 資料のリンクの保存
+  if (form.dataset.form === 'sg-links') {
+    try { await saveLinks(form); state.error = ''; } catch (err) { state.error = err.message; }
+    return render();
+  }
   // Manusのプロジェクト URL の保存
   if (form.dataset.form === 'sg-manus-url') {
     try { await saveManusUrl(form); state.error = ''; } catch (err) { state.error = err.message; }

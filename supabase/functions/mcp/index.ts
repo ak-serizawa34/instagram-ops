@@ -149,6 +149,9 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       const d = pick(s);
       out.push(`## ${t}\n${d?.body ? demote(d.body, "###") : "（まだ書かれていません）"}`);
     }
+    const { data: setting } = await db.from("account_settings").select("links").eq("account_id", id).maybeSingle();
+    const links = (setting?.links ?? []) as { label: string; url: string }[];
+    out.push(`## 資料（収録台本・音声データなどの置き場所）\n${links.length ? links.map((l) => `- ${l.label}：${l.url}`).join("\n") : "（まだ登録されていません）"}`);
     const formats = docs.filter((d) => d.section.startsWith("format:")).sort((x, y) => x.section.localeCompare(y.section));
     out.push(`## フォーマット（${formats.length}件）`);
     for (const f of formats) {
