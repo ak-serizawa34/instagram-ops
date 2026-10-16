@@ -173,7 +173,11 @@ async function studioSave() {
 // state.posts の1件を差し替える（作者などの表示用の情報は残す）
 function replacePost(updated) {
   const i = state.posts.findIndex(x => x.id === updated.id);
-  if (i >= 0) state.posts[i] = { ...state.posts[i], ...updated };
+  if (i < 0) return;
+  const merged = { ...state.posts[i], ...updated };
+  // 自分が更新した直後は、作業者の表示を自分にする（読み直さずに済ませる）
+  if (updated.updated_by && updated.updated_by === state.me) merged.updater = { email: state.myEmail };
+  state.posts[i] = merged;
 }
 
 // ---- 入力（打つたびにその場で反映。全体は描き直さない） ----

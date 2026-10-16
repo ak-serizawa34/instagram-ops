@@ -75,6 +75,7 @@ db.auth.onAuthStateChange((_event, session) => {
   $('login').hidden = !!session;
   $('app').hidden = !session;
   state.me = session?.user?.id || null;
+  state.myEmail = session?.user?.email || '';
   if (session && !state.accounts.length) start();
   if (!session) state.accounts = [];
 });
