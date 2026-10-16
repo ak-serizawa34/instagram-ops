@@ -6,6 +6,7 @@ const VIEWS = [
   { key: 'publish', label: '公開する' },
   { key: 'insights', label: '分析する' },
   { key: 'bench', label: 'ベンチマーク' },
+  { key: 'strategy', label: '戦略' },
 ];
 
 const state = {
@@ -91,7 +92,7 @@ async function start() {
 }
 
 async function loadAccountData() {
-  await Promise.all([loadBench(), loadPosts()]);
+  await Promise.all([loadBench(), loadPosts(), loadStrategy()]);
 }
 
 // ---- 投稿 ----
@@ -196,6 +197,7 @@ function render() {
     create: () => renderStudio(),
     publish: () => renderPublish(),
     bench: () => renderBench(),
+    strategy: () => renderStrategy(),
   }[state.view];
   $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
   drawCanvases();
@@ -314,7 +316,8 @@ $('app').addEventListener('click', async e => {
       if (await ACTIONS[t.dataset.act](t) === false) return;
     } else if (t.dataset.account) {
       state.account = t.dataset.account; state.editing = null; state.armed = null;
-      studio.post = null; publish.openId = null;
+      studio.post = null; studio.picking = false; publish.openId = null;
+      strategy.section = 'worldview'; strategy.editing = false; strategy.history = null;
       await loadAccountData();
     } else if (t.dataset.view) {
       state.view = t.dataset.view;
@@ -339,6 +342,11 @@ $('app').addEventListener('submit', async e => {
   const form = e.target;
   // 作る のチャット送信
   if (form.dataset.form === 'st-send') return studioSend(form);
+  // 戦略 の保存
+  if (form.dataset.form === 'sg-save') {
+    try { await saveStrategy(form); state.error = ''; } catch (err) { state.error = err.message; }
+    return render();
+  }
   const f = Object.fromEntries(new FormData(form));
   const fields = {
     priority: f.priority || null, name: f.name.trim(), handle: f.handle.trim(), url: f.url.trim(),

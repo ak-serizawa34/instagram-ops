@@ -9,6 +9,7 @@ const studio = {
   dirty: false,    // 手で直して、まだ保存していない
   saved: '',       // 「保存しました」などの表示
   armedSlide: false,
+  picking: false,  // 新しい投稿のフォーマットを選んでいるところ
 };
 
 const SIZE_LABEL = { s: '小', m: '中', l: '大' };
@@ -38,8 +39,26 @@ function renderStudio() {
     </div>
     ${drafts.length ? `<div class="chips">${chips}</div>` : ''}`;
 
+  // 新しい投稿：フォーマットを選ぶ
+  if (studio.picking) {
+    const cards = formatDocs().map(d => `
+      <button class="format-card" data-act="st-create" data-s="${esc(d.section)}">
+        <strong>${esc(d.title)}</strong>
+        <span class="muted small">${FORMAT_KIND[d.meta.format] || ''}・${d.meta.pages || ''}ページ</span>
+      </button>`).join('');
+    return top + `
+      <div class="panel picker">
+        <h3 class="block-title">フォーマットを選ぶ</h3>
+        <div class="format-cards">
+          ${cards}
+          <button class="format-card plain" data-act="st-create" data-s=""><strong>フォーマットなし</strong><span class="muted small">自由に作る</span></button>
+        </div>
+        <div class="form-actions"><button class="btn" data-act="st-pick-cancel">やめる</button></div>
+      </div>`;
+  }
+
   if (!studio.post) {
-    return top + `<div class="placeholder">「新しい投稿」から始めます。<br>写真と文字を添えて、チャットでAIに頼んでください。</div>`;
+    return top + `<div class="placeholder">「新しい投稿」から始めます。<br>フォーマットを選び、写真と文字を添えて、チャットで頼んでください。</div>`;
   }
   return top + `<div class="studio">${renderChat()}${renderDraft()}</div>`;
 }
@@ -117,6 +136,7 @@ function renderDraft() {
   return `
     <section class="draft panel">
       <div class="draft-head">
+        ${p.format_section ? `<span class="status">${esc(strategy.docs.find(d => d.section === p.format_section)?.title || 'フォーマット')}</span>` : ''}
         <input class="title-input" data-st="title" value="${esc(p.title || '')}" placeholder="題名（一覧で見分けるため）">
         <div class="seg">${format}</div>
       </div>
@@ -292,12 +312,26 @@ async function studioSend(form) {
 
 Object.assign(ACTIONS, {
   'st-new': async () => {
-    const post = check(await db.from('posts').insert({ account_id: state.account }).select('*').single());
-    await logPost(post.id, 'created');
+    if (studio.dirty && studio.post) await studioSave();
+    studio.post = null;
+    studio.picking = true;
+  },
+  'st-pick-cancel': () => { studio.picking = false; },
+  // 選んだフォーマットで投稿を作る（フォーマットなしなら空で）
+  'st-create': async t => {
+    const doc = formatDocs().find(d => d.section === t.dataset.s);
+    const post = check(await db.from('posts').insert({
+      account_id: state.account,
+      format_section: doc ? doc.section : null,
+      format: doc?.meta.format === 'story' ? 'story' : 'carousel',
+    }).select('*').single());
+    await logPost(post.id, 'created', doc ? `フォーマット：${doc.title}` : null);
     state.posts.unshift(post);
+    studio.picking = false;
     openStudio(post);
   },
   'st-open': async t => {
+    studio.picking = false;
     if (studio.dirty && studio.post) await studioSave();
     openStudio(state.posts.find(p => p.id === t.dataset.id));
   },

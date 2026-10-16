@@ -26,8 +26,9 @@ const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 
 async function rest(path, init = {}) {
   const r = await fetch(`${BASE}/rest/v1/${path}`, { ...init, headers: { ...H, 'Content-Type': 'application/json', ...init.headers } });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.status === 204 ? null : r.json();
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${r.status} ${text}`);
+  return text ? JSON.parse(text) : null; // return=minimal のときは本文なし
 }
 
 async function getPost(id) {
@@ -59,8 +60,14 @@ async function fetchPost(id, dir) {
     if (!r.ok) throw new Error(`写真${i}を取得できません（${r.status}）`);
     writeFileSync(join(dir, `photo${i}.jpg`), Buffer.from(await r.arrayBuffer()));
   }
+  // 戦略タブの最新の版：世界観・戦略と、この投稿で選んだフォーマット
+  const docs = await rest(`account_docs?account_id=eq.${post.account_id}&deleted=eq.false&select=section,title,body,meta`);
+  const pick = s => docs.find(d => d.section === s) || null;
   const view = {
     post_id: post.id, account: account.label, brand_notes: account.brand_notes,
+    worldview: pick('worldview')?.body ?? null,
+    strategy: pick('strategy')?.body ?? null,
+    format_doc: post.format_section ? pick(post.format_section) : null,
     title: post.title, format: post.format, photos: post.photos.length,
     slides: post.slides, caption: post.caption, hashtags: post.hashtags, chat: post.chat,
   };
@@ -105,10 +112,22 @@ async function apply(id, file) {
   console.log('書き込みました');
 }
 
+// 戦略タブの1項目に新しい版を足す（世界観・概要欄・戦略・フォーマット）
+//   file は JSON：{ "title": "...", "body": "...", "meta": {...} }
+async function doc(account, section, file) {
+  const d = JSON.parse(readFileSync(file, 'utf8'));
+  if (!d.title || typeof d.body !== 'string') throw new Error('title と body が必要です');
+  await rest('account_doc_versions', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ account_id: account, section, title: d.title, body: d.body, meta: d.meta || {} }),
+  });
+  console.log(`書き込みました：${account} / ${section}`);
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const run = { pending, fetch: fetchPost, apply }[cmd];
+const run = { pending, fetch: fetchPost, apply, doc }[cmd];
 if (!run) {
-  console.log('使い方：node pc/studio.mjs pending | fetch <post_id> <dir> | apply <post_id> <file>');
+  console.log('使い方：node pc/studio.mjs pending | fetch <post_id> <dir> | apply <post_id> <file> | doc <account> <section> <file>');
   process.exit(1);
 }
-run(...args).catch(e => { console.error(e.message); process.exit(1); });
+run(...args).catch(e => { console.error(e.message); process.exitCode = 1; });
