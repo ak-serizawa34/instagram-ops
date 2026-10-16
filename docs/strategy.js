@@ -18,7 +18,7 @@ const BASE_SECTIONS = [
   { section: 'strategy', title: '戦略' },
 ];
 
-const FORMAT_KIND = { carousel: 'カルーセル', story: 'ストーリーズ' };
+const FORMAT_KIND = { carousel: 'カルーセル', story: 'ストーリーズ', reel: 'リール' };
 
 async function loadStrategy() {
   strategy.docs = check(await db.from('account_docs').select('*').eq('account_id', state.account));

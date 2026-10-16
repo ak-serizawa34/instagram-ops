@@ -22,7 +22,7 @@ const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // 本文の見出し（## ）を1段下げて、項目の見出しと重ならないようにする
 const demote = (body: string, by: string) => body.trim().replace(/^## /gm, by + " ");
 
-const FORMAT_KIND: Record<string, string> = { carousel: "カルーセル", story: "ストーリーズ" };
+const FORMAT_KIND: Record<string, string> = { carousel: "カルーセル", story: "ストーリーズ", reel: "リール" };
 
 // ---- 道具（tools）の定義 ----
 
@@ -67,7 +67,7 @@ const TOOLS = [
         section: { type: "string" },
         body: { type: "string", description: "項目の全文。「## 」で見出し、「- 」で箇条書き" },
         title: { type: "string", description: "フォーマットの名前（フォーマットのときだけ）" },
-        format: { type: "string", enum: ["carousel", "story"], description: "フォーマットの形（フォーマットのときだけ）" },
+        format: { type: "string", enum: ["carousel", "story", "reel"], description: "フォーマットの形（フォーマットのときだけ）" },
         pages: { type: "integer", minimum: 1, maximum: 10, description: "フォーマットのページ数（フォーマットのときだけ）" },
       },
       required: ["account", "section", "body"], additionalProperties: false,
