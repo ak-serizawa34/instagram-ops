@@ -98,6 +98,43 @@ const TOOLS = [
     },
   },
   {
+    name: "add_benchmark",
+    description: "ベンチマーク（参考にするアカウント）を1件追加する。handle か url のどちらかは必須。同じアカウントが登録済みなら追加せずに知らせる（そのときは update_benchmark を使う）。特徴・取り入れる点などは、プロフィールや投稿で確かめたことと、このアカウントの戦略から書き、確かめていないことは書かない",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: ACCOUNT,
+        name: { type: "string", description: "表示名（例：hitokoto Radio）" },
+        handle: { type: "string", description: "Instagramのハンドル（@あり・なしどちらでもよい）" },
+        url: { type: "string", description: "InstagramのプロフィールURL（handle がないとき）" },
+        priority: { type: "string", enum: ["A", "B"], description: "A＝毎週確認したい主要なもの、B＝企画に応じて参照する補助的なもの。決まっていなければ省く" },
+        area: { type: "string", description: "参考領域（短く。例：川景観・滞在時間）" },
+        feature: { type: "string", description: "運用の特徴（実際にプロフィールや投稿で確かめたことだけ）" },
+        adopt: { type: "string", description: "取り入れる点（このアカウントの戦略に照らして）" },
+        caution: { type: "string", description: "注意点（真似しないこと）" },
+      },
+      required: ["account", "name"], additionalProperties: false,
+    },
+  },
+  {
+    name: "update_benchmark",
+    description: "登録済みのベンチマークの欄を直す。handle で探す。渡した欄だけが変わる",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: ACCOUNT,
+        handle: { type: "string", description: "直したいベンチマークのハンドル" },
+        name: { type: "string" },
+        priority: { type: "string", enum: ["A", "B"], description: "A＝毎週確認したい主要なもの、B＝企画に応じて参照する補助的なもの。決まっていなければ省く" },
+        area: { type: "string", description: "参考領域（短く。例：川景観・滞在時間）" },
+        feature: { type: "string", description: "運用の特徴（実際にプロフィールや投稿で確かめたことだけ）" },
+        adopt: { type: "string", description: "取り入れる点（このアカウントの戦略に照らして）" },
+        caution: { type: "string", description: "注意点（真似しないこと）" },
+      },
+      required: ["account", "handle"], additionalProperties: false,
+    },
+  },
+  {
     name: "save_template_preview",
     description: "フォーマットのCanvaテンプレートを作った・直したあとに使う。Canvaで書き出した各ページの画像URL（PNG/JPG、ページ順）を渡すと、Insta Studioに見本画像として保存し、テンプレートのリンクも記録する（前の版は履歴に残る）",
     inputSchema: {
@@ -118,6 +155,19 @@ const TOOLS = [
 const PREVIEW_HOSTS = [/\.canva\.com$/, /^document-export.*\.amazonaws\.com$/, /^s3\.amazonaws\.com$/];
 
 // ---- 道具の中身 ----
+
+// ハンドルの書き方をそろえる：@・URL・空白・大文字を取り除いた「ハンドル本体」にする
+function normalizeHandle(input: string) {
+  let s = (input ?? "").trim();
+  const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/);
+  if (m) s = m[1];
+  return s.replace(/^@/, "").replace(/\/.*$/, "").toLowerCase();
+}
+
+async function findBenchmark(acc: string, h: string) {
+  const { data } = await db.from("benchmarks").select("id, name, handle").eq("account_id", acc);
+  return (data ?? []).find((b) => normalizeHandle(b.handle ?? "") === h) ?? null;
+}
 
 async function account(id: string, client: Client) {
   if (client.accounts && !client.accounts.includes(id)) throw new Error(`このコネクタでは「${id}」は扱えません`);
@@ -197,6 +247,36 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     });
     if (error) throw new Error(error.message);
     return `保存しました（${isFormat ? title : base[section]}）。Insta Studio の戦略タブで、前の版は履歴から見られます`;
+  },
+
+  async add_benchmark({ account: id, name, handle, url, priority, area, feature, adopt, caution }, client) {
+    await account(id, client);
+    const h = normalizeHandle(handle ?? url ?? "");
+    if (!h) throw new Error("handle か InstagramのURL を渡してください");
+    const dup = await findBenchmark(id, h);
+    if (dup) throw new Error(`「${dup.name}」（@${h}）はすでに登録されています。直すときは update_benchmark を使ってください`);
+    const { error } = await db.from("benchmarks").insert({
+      account_id: id, name, handle: "@" + h, url: `https://www.instagram.com/${h}/`,
+      priority: priority ?? null, area: area ?? null, feature: feature ?? null, adopt: adopt ?? null, caution: caution ?? null,
+      created_by: client.user,
+    });
+    if (error) throw new Error(error.message);
+    return `ベンチマークに「${name}」（@${h}）を追加しました。アイコンはまだありません`;
+  },
+
+  async update_benchmark({ account: id, handle, ...fields }, client) {
+    await account(id, client);
+    const h = normalizeHandle(handle);
+    const row = await findBenchmark(id, h);
+    if (!row) throw new Error(`@${h} は登録されていません。追加するときは add_benchmark を使ってください`);
+    const allowed = ["name", "priority", "area", "feature", "adopt", "caution"];
+    const update: Record<string, unknown> = {};
+    for (const k of allowed) if (fields[k] !== undefined) update[k] = fields[k];
+    if (!Object.keys(update).length) throw new Error("直す欄を渡してください");
+    const { error } = await db.from("benchmarks")
+      .update({ ...update, updated_by: client.user, updated_at: new Date().toISOString() }).eq("id", row.id);
+    if (error) throw new Error(error.message);
+    return `「${row.name}」（@${h}）を更新しました（${Object.keys(update).join("・")}）`;
   },
 
   async save_template_preview({ account: id, section, image_urls, canva_url, note }, client) {

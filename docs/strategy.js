@@ -63,7 +63,6 @@ function renderStrategy() {
     ...BASE_SECTIONS.map(s => ({ ...s, doc: strategy.docs.find(d => d.section === s.section) })),
   ];
   const navHtml = nav.map(n => navItem(n.section, n.title)).join('')
-    + navItem('links', '資料')
     + '<div class="nav-label">フォーマット</div>'
     + formatDocs().map(d => navItem(d.section, d.title)).join('')
     + '<button class="nav-add" data-act="sg-new-format">＋ フォーマットを足す</button>';
@@ -249,6 +248,7 @@ async function saveLinks(form) {
     .upsert({ account_id: state.account, links, updated_at: new Date().toISOString() })
     .select('*').single());
   strategy.editing = false;
+  strategy.section = 'worldview';
 }
 
 async function saveManusUrl(form) {
@@ -260,6 +260,12 @@ async function saveManusUrl(form) {
 }
 
 Object.assign(ACTIONS, {
+  // アカウント名の下の「資料」の「編集」：戦略タブの資料の編集画面を開く
+  'lk-edit': () => {
+    state.view = 'strategy';
+    strategy.section = 'links'; strategy.editing = true;
+    strategy.history = null; strategy.manus = null;
+  },
   'sg-open': t => {
     strategy.manus = null;
     strategy.section = t.dataset.s;
@@ -268,6 +274,7 @@ Object.assign(ACTIONS, {
   'sg-edit': () => { strategy.editing = true; },
   'sg-cancel': () => {
     strategy.editing = false; strategy.armed = false;
+    if (strategy.section === 'links') strategy.section = 'worldview';
     if (!currentDoc() && strategy.section.startsWith('format:')) strategy.section = 'worldview';
   },
   'sg-new-format': () => {

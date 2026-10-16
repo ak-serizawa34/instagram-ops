@@ -234,8 +234,22 @@ function renderProfile() {
       <div>
         <h1 class="profile-name">${esc(a.label)}</h1>
         ${href ? `<a class="profile-handle" href="${esc(href)}" target="_blank" rel="noopener">@${esc(a.handle)}　Instagramを開く ↗</a>` : ''}
+        ${renderLinkChips()}
       </div>
     </section>`;
+}
+
+// 資料（収録台本・音声データなど）を、アカウント名の下に小さく並べる。どのタブでも見える
+function renderLinkChips() {
+  const links = state.settings?.links || [];
+  const chips = links.map(l =>
+    `<a class="link-chip" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('');
+  return `
+    <div class="link-chips">
+      <span class="link-chips-label">資料</span>
+      ${chips}
+      <button class="link-chip edit" data-act="lk-edit">${links.length ? '編集' : '＋ 登録'}</button>
+    </div>`;
 }
 
 function renderBench() {

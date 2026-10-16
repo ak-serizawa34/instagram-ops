@@ -124,8 +124,34 @@ async function doc(account, section, file) {
   console.log(`書き込みました：${account} / ${section}`);
 }
 
+// コネクタ（Manusと同じ窓口）の道具を呼ぶ。ベンチマークの追加など、決まりごと（重複チェック等）を通すため
+//   node pc/studio.mjs mcp <道具の名前> <引数のJSONファイル>
+//   例：node pc/studio.mjs mcp add_benchmark bench.json
+async function mcp(tool, file) {
+  const env = readFileSync(join(import.meta.dirname, '..', '.env'), 'utf8');
+  const token = env.match(/^MCP_TOKEN_CLAUDE=(.+)$/m)?.[1]?.trim();
+  if (!token) throw new Error('.env に MCP_TOKEN_CLAUDE がありません');
+  const args = file ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  const r = await fetch(`${BASE}/functions/v1/mcp?key=${token}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }),
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  console.log(j.result.content[0].text);
+  if (j.result.isError) process.exitCode = 1;
+}
+
+// アイコンの取り込み口のURLを作る（ChromeでInstagramのページからこのURLへ移動する）
+//   node pc/studio.mjs avatar-url <account> <handle>   → 末尾の src= に画像URLを足して使う
+async function avatarUrl(account, handle) {
+  const env = readFileSync(join(import.meta.dirname, '..', '.env'), 'utf8');
+  const token = env.match(/^MCP_TOKEN_CLAUDE=(.+)$/m)?.[1]?.trim();
+  console.log(`${BASE}/functions/v1/avatar-intake?key=${token}&account=${encodeURIComponent(account)}&handle=${encodeURIComponent(handle)}&src=`);
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const run = { pending, fetch: fetchPost, apply, doc }[cmd];
+const run = { pending, fetch: fetchPost, apply, doc, mcp, 'avatar-url': avatarUrl }[cmd];
 if (!run) {
   console.log('使い方：node pc/studio.mjs pending | fetch <post_id> <dir> | apply <post_id> <file> | doc <account> <section> <file>');
   process.exit(1);
