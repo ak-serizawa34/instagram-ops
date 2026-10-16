@@ -175,7 +175,8 @@ function renderForm(b) {
 
 $('app').addEventListener('click', async e => {
   const t = e.target.closest('button');
-  if (!t || t.type === 'submit' || t.id === 'logout') return;
+  // フォームの保存ボタンは submit で受けるので、ここでは扱わない
+  if (!t || t.id === 'logout' || (t.form && t.type === 'submit')) return;
   state.error = '';
   try {
     if (t.dataset.account) {
