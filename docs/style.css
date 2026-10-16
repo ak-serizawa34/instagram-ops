@@ -292,3 +292,8 @@ textarea { min-height: 72px; resize: vertical; }
   .nav-item, .nav-add { flex: none; white-space: nowrap; }
   .nav-label { display: none; }
 }
+
+/* Manusに渡す */
+.btn.manus { border-color: var(--accent); color: var(--accent); }
+.btn.manus:hover { background: var(--accent); color: #fff; }
+#manus-text { width: 100%; font-size: 13px; line-height: 1.7; margin-top: 10px; }

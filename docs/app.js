@@ -317,7 +317,7 @@ $('app').addEventListener('click', async e => {
     } else if (t.dataset.account) {
       state.account = t.dataset.account; state.editing = null; state.armed = null;
       studio.post = null; studio.picking = false; publish.openId = null;
-      strategy.section = 'worldview'; strategy.editing = false; strategy.history = null;
+      strategy.section = 'worldview'; strategy.editing = false; strategy.history = null; strategy.manus = null;
       await loadAccountData();
     } else if (t.dataset.view) {
       state.view = t.dataset.view;

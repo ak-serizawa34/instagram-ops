@@ -9,6 +9,7 @@ const strategy = {
   viewing: null,     // 履歴で選んだ版
   armed: false,
   profiles: {},      // id -> email
+  manus: null,       // Manusに渡す文 { scope, text, copied }
 };
 
 const BASE_SECTIONS = [
@@ -67,7 +68,10 @@ function renderStrategy() {
     + '<button class="nav-add" data-act="sg-new-format">＋ フォーマットを足す</button>';
 
   return `
-    <div class="section-head"><h2 class="section-title">戦略</h2></div>
+    <div class="section-head">
+      <h2 class="section-title">戦略</h2>
+      <button class="btn manus" data-act="sg-manus" data-scope="all">設計をまとめてManusに渡す</button>
+    </div>
     <div class="strategy">
       <nav class="strategy-nav">${navHtml}</nav>
       <section class="panel strategy-body">${renderStrategyMain()}</section>
@@ -78,7 +82,64 @@ function navItem(section, title) {
   return `<button class="nav-item ${strategy.section === section ? 'active' : ''}" data-act="sg-open" data-s="${esc(section)}">${esc(title)}</button>`;
 }
 
+// ---- Manusに渡す：設計を、Manusのチャットに貼れる依頼文にまとめる ----
+
+function docBody(section) {
+  return strategy.docs.find(d => d.section === section && !d.deleted)?.body?.trim() || '';
+}
+
+function manusHeader() {
+  const a = account();
+  return `あなたはInstagramアカウント「${a.label}」${a.handle ? `（@${a.handle}）` : ''}の運用を手伝います。
+次の設計に従ってください。
+
+# 必ず守ること
+- 公開する前に、必ず下書き（画像・キャプション・ハッシュタグ）を見せて、確認を取ってください
+- 素材にない事実・数字・日付・固有名詞・人の発言を作らないでください。足りなければ質問してください
+- 設計にない構成やルールで作らないでください`;
+}
+
+// scope：'format'（いま開いているフォーマット1つ）／'all'（設計をまとめて）
+function buildManusText(scope) {
+  const parts = [manusHeader()];
+  if (scope === 'format') {
+    const f = currentDoc();
+    parts.push(`# 使うフォーマット：${f.title}（${FORMAT_KIND[f.meta.format] || ''}・${f.meta.pages || ''}ページ）\n${f.body.trim()}`);
+  }
+  const world = docBody('worldview');
+  const rules = docBody('strategy');
+  if (world) parts.push(`# 世界観\n${world}`);
+  if (rules) parts.push(`# 戦略・決まったルール\n${rules}`);
+  if (scope === 'all') {
+    const profile = docBody('profile');
+    if (profile) parts.push(`# 概要欄（いまの状態）\n${profile}`);
+    const formats = formatDocs().map(f => `## ${f.title}（${FORMAT_KIND[f.meta.format] || ''}・${f.meta.pages || ''}ページ）\n${f.body.trim()}`);
+    if (formats.length) parts.push(`# フォーマット（依頼のときに、どれを使うか指定します）\n${formats.join('\n\n')}`);
+    parts.push('この設計を覚えておいてください。投稿を頼むときは、フォーマットの名前と素材を伝えます。');
+  } else {
+    parts.push('# 今回の素材\n【ここに、エピソードのタイトル・台本の要点・写真などを添えてください】');
+  }
+  return parts.join('\n\n');
+}
+
+function renderManusPanel() {
+  return `
+    <div class="doc-head">
+      <h3 class="doc-title">Manusに渡す</h3>
+      <button class="btn small" data-act="sg-manus-close">閉じる</button>
+    </div>
+    <p class="muted small">${strategy.manus.scope === 'all'
+      ? 'Manusに最初に1回渡す用です。設計を変えたら、また渡し直してください。'
+      : 'Manusのチャットに貼り、最後の「今回の素材」を書き換えて送ってください。'}</p>
+    <textarea id="manus-text" rows="24">${esc(strategy.manus.text)}</textarea>
+    <div class="form-actions">
+      <span class="muted small">${strategy.manus.copied ? 'コピーしました。Manusのチャットに貼ってください' : ''}</span>
+      <button class="btn primary" data-act="sg-manus-copy">コピーする</button>
+    </div>`;
+}
+
 function renderStrategyMain() {
+  if (strategy.manus) return renderManusPanel();
   const base = BASE_SECTIONS.find(s => s.section === strategy.section);
   const doc = currentDoc();
   const isFormat = strategy.section.startsWith('format:');
@@ -110,6 +171,7 @@ function renderStrategyMain() {
     <div class="doc-head">
       <h3 class="doc-title">${esc(title)}</h3>
       <div class="actions">
+        ${isFormat && doc ? '<button class="btn small manus" data-act="sg-manus" data-scope="format">Manusに渡す</button>' : ''}
         ${doc ? '<button class="btn small" data-act="sg-history">履歴</button>' : ''}
         <button class="btn small primary" data-act="sg-edit">編集</button>
       </div>
@@ -155,6 +217,7 @@ async function saveStrategy(form) {
 
 Object.assign(ACTIONS, {
   'sg-open': t => {
+    strategy.manus = null;
     strategy.section = t.dataset.s;
     strategy.editing = false; strategy.history = null; strategy.viewing = null; strategy.armed = false;
   },
@@ -185,4 +248,14 @@ Object.assign(ACTIONS, {
   },
   'sg-view': t => { strategy.viewing = strategy.history.find(v => v.id === t.dataset.id); },
   'sg-history-close': () => { strategy.history = null; strategy.viewing = null; },
+  'sg-manus': t => {
+    strategy.editing = false; strategy.history = null;
+    strategy.manus = { scope: t.dataset.scope, text: buildManusText(t.dataset.scope), copied: false };
+  },
+  'sg-manus-copy': async () => {
+    strategy.manus.text = document.getElementById('manus-text').value; // 画面で直した分も含める
+    await navigator.clipboard.writeText(strategy.manus.text);
+    strategy.manus.copied = true;
+  },
+  'sg-manus-close': () => { strategy.manus = null; },
 });
