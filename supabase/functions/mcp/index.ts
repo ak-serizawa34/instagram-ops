@@ -5,12 +5,17 @@
 // を登録する。key（合言葉）は秘密設定 MCP_TOKEN と照合する。URLはリポジトリや画面に出さない
 //
 // MCPの「Streamable HTTP」を、POSTでJSONを返す最小の形で実装している
-// 必要な秘密設定：MCP_TOKEN（合言葉）、MCP_USER_ID（書き込みを誰の作業として残すか＝芹澤さんのprofiles.id）
+// 必要な秘密設定：MCP_TOKEN（Manus用の合言葉）、MCP_TOKEN_CLAUDE（Claude Code用の合言葉）、MCP_USER_ID（書き込みを誰の作業として残すか＝芹澤さんのprofiles.id）
 
 import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-const TOKEN = Deno.env.get("MCP_TOKEN") ?? "";
+// 合言葉はつなぐ先ごとに分ける。どこからの書き込みかを記録に残すため
+const CLIENTS = [
+  { token: Deno.env.get("MCP_TOKEN") ?? "", source: "manus", label: "Manus" },
+  { token: Deno.env.get("MCP_TOKEN_CLAUDE") ?? "", source: "claude-code", label: "Claude Code" },
+].filter((c) => c.token);
+type Client = typeof CLIENTS[number];
 const USER_ID = Deno.env.get("MCP_USER_ID") ?? null;
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -45,7 +50,7 @@ const TOOLS = [
   },
   {
     name: "list_posts",
-    description: "これまでに記録した投稿（Manusで作った・公開したもの）の一覧。新しい投稿を考えるとき、重複を避けるために読む",
+    description: "これまでに記録した投稿（Manus・Claude Codeで作った・公開したもの）の一覧。新しい投稿を考えるとき、重複を避けるために読む",
     inputSchema: {
       type: "object",
       properties: { account: ACCOUNT, limit: { type: "integer", minimum: 1, maximum: 50, description: "件数（省略で20）" } },
@@ -104,7 +109,7 @@ async function latestDocs(acc: string) {
   return data ?? [];
 }
 
-const run: Record<string, (a: any) => Promise<string>> = {
+const run: Record<string, (a: any, client: Client) => Promise<string>> = {
   async list_accounts() {
     const { data } = await db.from("accounts").select("id, label, handle").order("sort");
     return (data ?? []).map((a) => `- ${a.id}：${a.label}（@${a.handle}）`).join("\n");
@@ -164,7 +169,7 @@ const run: Record<string, (a: any) => Promise<string>> = {
     return `保存しました（${isFormat ? title : base[section]}）。Insta Studio の戦略タブで、前の版は履歴から見られます`;
   },
 
-  async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes }) {
+  async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes }, client) {
     await account(id);
     let section: string | null = null;
     if (format_name) {
@@ -188,12 +193,12 @@ const run: Record<string, (a: any) => Promise<string>> = {
       if (error) throw new Error(error.message);
     } else {
       const { data, error } = await db.from("posts")
-        .insert({ ...fields, account_id: id, source: "manus", created_by: USER_ID }).select("id").single();
+        .insert({ ...fields, account_id: id, source: client.source, created_by: USER_ID }).select("id").single();
       if (error) throw new Error(error.message);
       id2 = data.id;
     }
     await db.from("post_logs").insert({
-      post_id: id2, account_id: id, action: post_id ? status : "created", note: "Manusから", created_by: USER_ID,
+      post_id: id2, account_id: id, action: post_id ? status : "created", note: `${client.label}から`, created_by: USER_ID,
     });
     return `記録しました（post_id: ${id2}）。状態が進んだら、この post_id を付けて record_post を呼んでください`;
   },
@@ -213,17 +218,21 @@ function reply(body: unknown, status = 200) {
   });
 }
 
-function authorized(req: Request) {
-  if (!TOKEN) return false;
-  const url = new URL(req.url);
-  const given = url.searchParams.get("key") ?? (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (given.length !== TOKEN.length) return false;
+function same(a: string, b: string) {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < given.length; i++) diff |= given.charCodeAt(i) ^ TOKEN.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
 
-async function handle(msg: any) {
+// 合言葉が合えば、どこから呼ばれたか（Manus／Claude Code）を返す。合わなければ null
+function authorized(req: Request): Client | null {
+  const url = new URL(req.url);
+  const given = url.searchParams.get("key") ?? (req.headers.get("Authorization") ?? "").replace(/^Bearers+/i, "");
+  return CLIENTS.find((c) => same(given, c.token)) ?? null;
+}
+
+async function handle(msg: any, client: Client) {
   const { id, method, params } = msg;
   const ok = (result: unknown) => ({ jsonrpc: "2.0", id, result });
   const fail = (code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
@@ -243,7 +252,7 @@ async function handle(msg: any) {
     const fn = run[params?.name];
     if (!fn) return fail(-32602, `道具「${params?.name}」はありません`);
     try {
-      return ok({ content: [{ type: "text", text: await fn(params.arguments ?? {}) }] });
+      return ok({ content: [{ type: "text", text: await fn(params.arguments ?? {}, client) }] });
     } catch (e) {
       return ok({ content: [{ type: "text", text: `エラー：${(e as Error).message}` }], isError: true });
     }
@@ -254,16 +263,17 @@ async function handle(msg: any) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (!authorized(req)) return reply({ error: "合言葉が違います" }, 401);
+  const client = authorized(req);
+  if (!client) return reply({ error: "合言葉が違います" }, 401);
   if (req.method !== "POST") return reply({ error: "POSTで呼んでください" }, 405);
 
   let body;
   try { body = await req.json(); } catch { return reply({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSONを読めません" } }, 400); }
 
   if (Array.isArray(body)) {
-    const results = (await Promise.all(body.map(handle))).filter(Boolean);
+    const results = (await Promise.all(body.map((m) => handle(m, client)))).filter(Boolean);
     return results.length ? reply(results) : reply(null, 202);
   }
-  const result = await handle(body);
+  const result = await handle(body, client);
   return result ? reply(result) : reply(null, 202);
 });
