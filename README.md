@@ -20,3 +20,23 @@ select id, 'ashitaka' from profiles where email = 'その人のメールアド�
 ```
 
 `'ashitaka'` の部分は `'hotorino'` `'chaochao'` に変えられます。
+
+ASAさんの場合は、あわせてManusでの書き込みを本人の作業として残すため、ASAさんの profiles.id を秘密設定 `MCP_USER_ID_ASA` に入れ、コネクタを反映し直します（設計書 9章）。
+
+## コネクタ（Manus・Claude Code）と取り込み口を反映する
+
+```
+npx supabase functions deploy mcp --project-ref fesasskyvogpmifxhxoa --use-api --no-verify-jwt
+npx supabase functions deploy avatar-intake --project-ref fesasskyvogpmifxhxoa --use-api --no-verify-jwt
+```
+
+## 画面を直したとき
+
+```
+sh pc/bump.sh   # 読み込みに版の印を付ける（ブラウザに古いファイルを使わせない）
+git add -A && git commit && git push
+```
+
+## 休止対策
+
+`.github/workflows/keepalive.yml` が毎日Supabaseにアクセスします。GitHubの「Actions」タブで動いているか確認できます。手動で動かすときは `gh workflow run keepalive.yml`。

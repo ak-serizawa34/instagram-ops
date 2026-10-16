@@ -1,7 +1,7 @@
 // 画面の動き。データの読み書きはすべてSupabase経由
 const db = supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
 
-// タブ。作る・公開する（studio.js・publish.js）は、Manusで運用するため 2026-10-16 に外した（v0.1 タグに残っている）
+// タブ。投稿づくり・公開・分析はManusで行う（2026-10-16〜）。旧「作る・公開する」の画面は v0.1 タグに残っている
 const VIEWS = [
   { key: 'home', label: 'ホーム' },
   { key: 'strategy', label: '戦略' },
@@ -12,10 +12,10 @@ const VIEWS = [
 const state = {
   accounts: [], account: null, view: 'home',
   bench: [], priority: 'すべて', editing: null, armed: null, error: '',
-  posts: [],          // 選んでいるアカウントの投稿（作る・公開する で共有）
+  posts: [],          // 選んでいるアカウントの投稿の記録（Manusなどが記録したもの）
 };
 
-// studio.js・publish.js が登録するボタンの処理（data-act の名前 → 関数）
+// 各画面のファイル（strategy.js・records.js・guide.js）が登録するボタンの処理（data-act の名前 → 関数）
 const ACTIONS = {};
 
 const STATUS_LABEL = { draft: '下書き', approved: '確認済み', posted: '投稿済み' };
@@ -122,54 +122,26 @@ async function loadPosts() {
     .order('created_at', { ascending: false }));
 }
 
-async function logPost(postId, action, note) {
-  check(await db.from('post_logs').insert({ post_id: postId, account_id: state.account, action, note: note || null }));
-}
-
-// 写真（非公開の media バケット）を、署名付きURLで読み込んで使い回す
-const photoCache = new Map(); // path -> { url, img: Promise<HTMLImageElement> }
+// 非公開の media バケットの画像（フォーマットの見本など）を、署名付きURLで表示する。URLは使い回す
+const photoCache = new Map(); // path -> signedUrl
 
 async function photoUrls(paths) {
   const missing = paths.filter(p => !photoCache.has(p));
   if (missing.length) {
     const signed = check(await db.storage.from('media').createSignedUrls(missing, 3600));
-    signed.forEach((s, i) => {
-      const img = new Promise((resolve, reject) => {
-        const el = new Image();
-        el.crossOrigin = 'anonymous'; // canvas からJPEGを書き出せるように
-        el.onload = () => resolve(el);
-        el.onerror = reject;
-        el.src = s.signedUrl;
-      });
-      photoCache.set(missing[i], { url: s.signedUrl, img });
-    });
+    signed.forEach((x, i) => photoCache.set(missing[i], x.signedUrl));
   }
-  return paths.map(p => photoCache.get(p).url);
+  return paths.map(p => photoCache.get(p));
 }
 
-async function photoImage(path) {
-  await photoUrls([path]);
-  return photoCache.get(path).img.catch(() => null);
-}
-
-// 投稿の1ページを canvas に描く
-async function drawSlide(canvas, post, i) {
-  const slide = post.slides[i];
-  if (!slide) return;
-  const path = slide.photo >= 0 ? post.photos[slide.photo] : null;
-  const image = path ? await photoImage(path) : null;
-  await Templates.draw(canvas, {
-    template: slide.template, format: post.format === 'story' ? 'story' : 'feed',
-    image, text: slide.text, sub: account()?.label, size: slide.size, align: slide.align,
-  });
-}
-
-// render のあと、data-post と data-slide を持つ canvas を描く
-function drawCanvases() {
-  document.querySelectorAll('canvas[data-post][data-slide]').forEach(c => {
-    const post = c.dataset.post === 'studio' ? studio.post : state.posts.find(p => p.id === c.dataset.post);
-    if (post) drawSlide(c, post, Number(c.dataset.slide));
-  });
+// state.posts の1件を差し替える（作者などの表示用の情報は残す）
+function replacePost(updated) {
+  const i = state.posts.findIndex(x => x.id === updated.id);
+  if (i < 0) return;
+  const merged = { ...state.posts[i], ...updated };
+  // 自分が更新した直後は、作業者の表示を自分にする（読み直さずに済ませる）
+  if (updated.updated_by && updated.updated_by === state.me) merged.updater = { email: state.myEmail };
+  state.posts[i] = merged;
 }
 
 // ---- ベンチマーク ----
@@ -182,8 +154,23 @@ async function loadBench() {
     .order('created_at'));
 }
 
+// ハンドルの書き方をそろえる（コネクタの normalizeHandle と同じ決まり）：@・URL・大文字を除いた本体
+function normalizeHandle(input) {
+  let x = (input || '').trim();
+  const m = x.match(/instagram\.com\/([A-Za-z0-9._]+)/);
+  if (m) x = m[1];
+  return x.replace(/^@/, '').replace(/\/.*$/, '').toLowerCase();
+}
+
 async function saveBench(id, fields) {
   if (!fields.name) throw new Error('アカウント名を入れてください');
+  const h = normalizeHandle(fields.handle || fields.url);
+  if (h) {
+    const dup = state.bench.find(b => b.id !== id && normalizeHandle(b.handle) === h);
+    if (dup) throw new Error(`@${h} は「${dup.name}」としてすでに登録されています`);
+    fields.handle = '@' + h;
+    if (!fields.url || /instagram\.com/.test(fields.url)) fields.url = `https://www.instagram.com/${h}/`;
+  }
   if (id) {
     check(await db.from('benchmarks').update(fields).eq('id', id));
   } else {
@@ -213,16 +200,12 @@ function render() {
     return;
   }
   const body = {
-    create: () => renderStudio(),
-    publish: () => renderPublish(),
     bench: () => renderBench(),
     home: () => renderGuide(),
     strategy: () => renderStrategy(),
     records: () => renderRecords(),
   }[state.view];
   $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
-  drawCanvases();
-  if (state.view === 'create') afterStudioRender();
   if (state.view === 'strategy') showPreviews().catch(() => {});
 }
 
@@ -348,11 +331,10 @@ $('app').addEventListener('click', async e => {
   state.error = '';
   try {
     if (ACTIONS[t.dataset.act]) {
-      // 作る・公開する のボタン。false を返したら描き直さない
+      // 各画面のボタン。false を返したら描き直さない
       if (await ACTIONS[t.dataset.act](t) === false) return;
     } else if (t.dataset.account) {
       state.account = t.dataset.account; state.editing = null; state.armed = null;
-      studio.post = null; studio.picking = false; publish.openId = null;
       strategy.section = 'worldview'; strategy.editing = false; strategy.history = null; strategy.manus = null; records.open = null;
       await loadAccountData();
     } else if (t.dataset.view) {
@@ -376,8 +358,6 @@ $('app').addEventListener('click', async e => {
 $('app').addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target;
-  // 作る のチャット送信
-  if (form.dataset.form === 'st-send') return studioSend(form);
   // 資料のリンクの保存
   if (form.dataset.form === 'sg-links') {
     try { await saveLinks(form); state.error = ''; } catch (err) { state.error = err.message; }
@@ -411,12 +391,3 @@ $('app').addEventListener('submit', async e => {
   render();
 });
 
-// 作る の入力欄（文字・キャプションなど）は、打つたびに全体を描き直さず、その場で反映する
-$('app').addEventListener('input', e => {
-  if (e.target.dataset.st) studioInput(e.target);
-});
-
-// 作る の写真の追加
-$('app').addEventListener('change', e => {
-  if (e.target.dataset.st === 'upload') studioUpload(e.target);
-});
