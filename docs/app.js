@@ -1,16 +1,15 @@
 // 画面の動き。データの読み書きはすべてSupabase経由
 const db = supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabaseAnonKey);
 
+// タブ。作る・公開する（studio.js・publish.js）は、Manusで運用するため 2026-10-16 に外した（v0.1 タグに残っている）
 const VIEWS = [
-  { key: 'create', label: '作る' },
-  { key: 'publish', label: '公開する' },
-  { key: 'insights', label: '分析する' },
-  { key: 'bench', label: 'ベンチマーク' },
   { key: 'strategy', label: '戦略' },
+  { key: 'records', label: '投稿の記録' },
+  { key: 'bench', label: 'ベンチマーク' },
 ];
 
 const state = {
-  accounts: [], account: null, view: 'create',
+  accounts: [], account: null, view: 'strategy',
   bench: [], priority: 'すべて', editing: null, armed: null, error: '',
   posts: [],          // 選んでいるアカウントの投稿（作る・公開する で共有）
 };
@@ -198,6 +197,7 @@ function render() {
     publish: () => renderPublish(),
     bench: () => renderBench(),
     strategy: () => renderStrategy(),
+    records: () => renderRecords(),
   }[state.view];
   $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
   drawCanvases();
@@ -317,7 +317,7 @@ $('app').addEventListener('click', async e => {
     } else if (t.dataset.account) {
       state.account = t.dataset.account; state.editing = null; state.armed = null;
       studio.post = null; studio.picking = false; publish.openId = null;
-      strategy.section = 'worldview'; strategy.editing = false; strategy.history = null; strategy.manus = null;
+      strategy.section = 'worldview'; strategy.editing = false; strategy.history = null; strategy.manus = null; records.open = null;
       await loadAccountData();
     } else if (t.dataset.view) {
       state.view = t.dataset.view;
@@ -342,6 +342,11 @@ $('app').addEventListener('submit', async e => {
   const form = e.target;
   // 作る のチャット送信
   if (form.dataset.form === 'st-send') return studioSend(form);
+  // 投稿の記録 のメモ
+  if (form.dataset.form === 'rc-note') {
+    try { await saveRecordNote(form); state.error = ''; } catch (err) { state.error = err.message; }
+    return render();
+  }
   // 戦略 の保存
   if (form.dataset.form === 'sg-save') {
     try { await saveStrategy(form); state.error = ''; } catch (err) { state.error = err.message; }

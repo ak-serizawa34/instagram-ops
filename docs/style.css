@@ -297,3 +297,13 @@ textarea { min-height: 72px; resize: vertical; }
 .btn.manus { border-color: var(--accent); color: var(--accent); }
 .btn.manus:hover { background: var(--accent); color: #fff; }
 #manus-text { width: 100%; font-size: 13px; line-height: 1.7; margin-top: 10px; }
+
+/* ==== 投稿の記録 ==== */
+.records { display: grid; gap: 8px; }
+.record { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.record-head { width: 100%; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; text-align: left;
+  border: 0; background: none; padding: 14px 18px; font: inherit; cursor: pointer; }
+.record-head:hover { background: var(--paper); }
+.record-title { font-family: var(--mincho); font-weight: 700; font-size: 16px; flex: 1; min-width: 160px; }
+.record-body { padding: 0 18px 18px; display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.record-body .block-title { margin: 6px 0 0; font-size: 14px; }

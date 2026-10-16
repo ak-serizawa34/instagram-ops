@@ -9,7 +9,7 @@ const strategy = {
   viewing: null,     // 履歴で選んだ版
   armed: false,
   profiles: {},      // id -> email
-  manus: null,       // Manusに渡す文 { scope, text, copied }
+  manus: null,       // Manusの設定を開いているとき { copied }
 };
 
 const BASE_SECTIONS = [
@@ -70,7 +70,7 @@ function renderStrategy() {
   return `
     <div class="section-head">
       <h2 class="section-title">戦略</h2>
-      <button class="btn manus" data-act="sg-manus" data-scope="all">設計をまとめてManusに渡す</button>
+      <button class="btn manus" data-act="sg-manus">Manusの設定</button>
     </div>
     <div class="strategy">
       <nav class="strategy-nav">${navHtml}</nav>
@@ -82,58 +82,30 @@ function navItem(section, title) {
   return `<button class="nav-item ${strategy.section === section ? 'active' : ''}" data-act="sg-open" data-s="${esc(section)}">${esc(title)}</button>`;
 }
 
-// ---- Manusに渡す：設計を、Manusのチャットに貼れる依頼文にまとめる ----
+// ---- Manusの設定：Manusのプロジェクトに1回だけ貼る指示 ----
+// 設計そのものは、ManusがコネクタInsta Studio（supabase/functions/mcp）で毎回読みに来る。貼り直しは不要
 
-function docBody(section) {
-  return strategy.docs.find(d => d.section === section && !d.deleted)?.body?.trim() || '';
-}
-
-function manusHeader() {
+function manusInstruction() {
   const a = account();
-  return `あなたはInstagramアカウント「${a.label}」${a.handle ? `（@${a.handle}）` : ''}の運用を手伝います。
-次の設計に従ってください。
-
-# 必ず守ること
+  return `このプロジェクトは「${a.label}」${a.handle ? `（@${a.handle}）` : ""}のInstagram運用です。
+- 作業の前に、Insta Studio コネクタの get_account_design（account: ${a.id}）で設計を読み、フォーマットとルールに従ってください
+- 新しい投稿を考えるときは list_posts で過去の投稿を見て、重複を避けてください。参考には get_benchmarks を使えます
 - 公開する前に、必ず下書き（画像・キャプション・ハッシュタグ）を見せて、確認を取ってください
 - 素材にない事実・数字・日付・固有名詞・人の発言を作らないでください。足りなければ質問してください
-- 設計にない構成やルールで作らないでください`;
-}
-
-// scope：'format'（いま開いているフォーマット1つ）／'all'（設計をまとめて）
-function buildManusText(scope) {
-  const parts = [manusHeader()];
-  if (scope === 'format') {
-    const f = currentDoc();
-    parts.push(`# 使うフォーマット：${f.title}（${FORMAT_KIND[f.meta.format] || ''}・${f.meta.pages || ''}ページ）\n${f.body.trim()}`);
-  }
-  const world = docBody('worldview');
-  const rules = docBody('strategy');
-  if (world) parts.push(`# 世界観\n${world}`);
-  if (rules) parts.push(`# 戦略・決まったルール\n${rules}`);
-  if (scope === 'all') {
-    const profile = docBody('profile');
-    if (profile) parts.push(`# 概要欄（いまの状態）\n${profile}`);
-    const formats = formatDocs().map(f => `## ${f.title}（${FORMAT_KIND[f.meta.format] || ''}・${f.meta.pages || ''}ページ）\n${f.body.trim()}`);
-    if (formats.length) parts.push(`# フォーマット（依頼のときに、どれを使うか指定します）\n${formats.join('\n\n')}`);
-    parts.push('この設計を覚えておいてください。投稿を頼むときは、フォーマットの名前と素材を伝えます。');
-  } else {
-    parts.push('# 今回の素材\n【ここに、エピソードのタイトル・台本の要点・写真などを添えてください】');
-  }
-  return parts.join('\n\n');
+- 下書きを作ったら record_post（status: draft）、確認が取れたら approved、公開したら posted と投稿のURLで記録してください
+- 設計を変えると決めたときだけ、save_design で保存してください`;
 }
 
 function renderManusPanel() {
   return `
     <div class="doc-head">
-      <h3 class="doc-title">Manusに渡す</h3>
+      <h3 class="doc-title">Manusの設定</h3>
       <button class="btn small" data-act="sg-manus-close">閉じる</button>
     </div>
-    <p class="muted small">${strategy.manus.scope === 'all'
-      ? 'Manusに最初に1回渡す用です。設計を変えたら、また渡し直してください。'
-      : 'Manusのチャットに貼り、最後の「今回の素材」を書き換えて送ってください。'}</p>
-    <textarea id="manus-text" rows="24">${esc(strategy.manus.text)}</textarea>
+    <p class="muted small">Manusで「${esc(account().label)}」用のプロジェクトを作り、その指示（Instructions）に1回だけ貼ってください。設計を変えても、貼り直す必要はありません（Manusが毎回コネクタで最新を読みます）。</p>
+    <textarea id="manus-text" rows="12" readonly>${esc(manusInstruction())}</textarea>
     <div class="form-actions">
-      <span class="muted small">${strategy.manus.copied ? 'コピーしました。Manusのチャットに貼ってください' : ''}</span>
+      <span class="muted small">${strategy.manus.copied ? "コピーしました" : ""}</span>
       <button class="btn primary" data-act="sg-manus-copy">コピーする</button>
     </div>`;
 }
@@ -171,7 +143,6 @@ function renderStrategyMain() {
     <div class="doc-head">
       <h3 class="doc-title">${esc(title)}</h3>
       <div class="actions">
-        ${isFormat && doc ? '<button class="btn small manus" data-act="sg-manus" data-scope="format">Manusに渡す</button>' : ''}
         ${doc ? '<button class="btn small" data-act="sg-history">履歴</button>' : ''}
         <button class="btn small primary" data-act="sg-edit">編集</button>
       </div>
@@ -250,11 +221,10 @@ Object.assign(ACTIONS, {
   'sg-history-close': () => { strategy.history = null; strategy.viewing = null; },
   'sg-manus': t => {
     strategy.editing = false; strategy.history = null;
-    strategy.manus = { scope: t.dataset.scope, text: buildManusText(t.dataset.scope), copied: false };
+    strategy.manus = { copied: false };
   },
   'sg-manus-copy': async () => {
-    strategy.manus.text = document.getElementById('manus-text').value; // 画面で直した分も含める
-    await navigator.clipboard.writeText(strategy.manus.text);
+    await navigator.clipboard.writeText(manusInstruction());
     strategy.manus.copied = true;
   },
   'sg-manus-close': () => { strategy.manus = null; },
