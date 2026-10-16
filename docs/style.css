@@ -307,3 +307,11 @@ textarea { min-height: 72px; resize: vertical; }
 .record-title { font-family: var(--mincho); font-weight: 700; font-size: 16px; flex: 1; min-width: 160px; }
 .record-body { padding: 0 18px 18px; display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .record-body .block-title { margin: 6px 0 0; font-size: 14px; }
+
+/* ManusとClaude Codeへのボタン */
+.jump { display: flex; gap: 6px; flex: none; }
+.jump-link { font-size: 12px; text-decoration: none; color: var(--accent); border: 1px solid var(--accent);
+  border-radius: 999px; padding: 4px 12px; white-space: nowrap; transition: background .2s, color .2s; }
+.jump-link:hover { background: var(--accent); color: #fff; }
+.manus-url { margin: 12px 0 18px; }
+@media (max-width: 640px) { .jump { order: 2; } }

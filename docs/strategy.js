@@ -104,6 +104,12 @@ function renderManusPanel() {
       <button class="btn small" data-act="sg-manus-close">閉じる</button>
     </div>
     <p class="muted small">Manusで「${esc(account().label)}」用のプロジェクトを作り、その指示（Instructions）に1回だけ貼ってください。設計を変えても、貼り直す必要はありません（Manusが毎回コネクタで最新を読みます）。</p>
+    <form class="edit manus-url" data-form="sg-manus-url">
+      <label>このアカウントのManusプロジェクトのURL（上部の「Manus」ボタンがここに飛びます）
+        <input name="manus_url" type="url" value="${esc(state.settings?.manus_url || '')}" placeholder="https://manus.im/app/project/..."></label>
+      <div class="form-actions"><button type="submit" class="btn small">URLを保存</button></div>
+    </form>
+    <h4 class="block-title">プロジェクトの指示</h4>
     <textarea id="manus-text" rows="12" readonly>${esc(manusInstruction())}</textarea>
     <div class="form-actions">
       <span class="muted small">${strategy.manus.copied ? "コピーしました" : ""}</span>
@@ -186,6 +192,14 @@ async function saveStrategy(form) {
   check(await db.from('account_doc_versions').insert(row));
   strategy.editing = false;
   await loadStrategy();
+}
+
+async function saveManusUrl(form) {
+  const url = new FormData(form).get('manus_url').trim();
+  if (url && !url.startsWith('https://manus.im/')) throw new Error('ManusのURL（https://manus.im/...）を入れてください');
+  state.settings = check(await db.from('account_settings')
+    .upsert({ account_id: state.account, manus_url: url || null, updated_at: new Date().toISOString() })
+    .select('*').single());
 }
 
 Object.assign(ACTIONS, {

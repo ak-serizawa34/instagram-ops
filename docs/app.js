@@ -91,7 +91,25 @@ async function start() {
 }
 
 async function loadAccountData() {
-  await Promise.all([loadBench(), loadPosts(), loadStrategy()]);
+  await Promise.all([loadBench(), loadPosts(), loadStrategy(), loadSettings()]);
+}
+
+// ---- アカウントの設定（ManusのプロジェクトURL）----
+
+const MANUS_HOME = 'https://manus.im/app';
+const CLAUDE_CODE_URL = 'https://claude.ai/code';
+
+async function loadSettings() {
+  const rows = check(await db.from('account_settings').select('*').eq('account_id', state.account));
+  state.settings = rows[0] || { account_id: state.account, manus_url: null };
+}
+
+// 上部の「Manus」「Claude Code」ボタン。Manusはプロジェクトが登録してあればそこへ
+function renderJump() {
+  const manus = state.settings?.manus_url || MANUS_HOME;
+  const label = state.settings?.manus_url ? `Manus：${esc(account()?.label || '')}` : 'Manus';
+  return `<a class="jump-link" href="${esc(manus)}" target="_blank" rel="noopener">${label} ↗</a>`
+    + `<a class="jump-link" href="${CLAUDE_CODE_URL}" target="_blank" rel="noopener">Claude Code ↗</a>`;
 }
 
 // ---- 投稿 ----
@@ -184,6 +202,7 @@ function render() {
   // アカウント切り替え：アイコン＋名前
   $('accounts').innerHTML = state.accounts.map(a =>
     `<button class="${a.id === state.account ? 'active' : ''}" data-account="${a.id}">${avatar(a.label, a.avatar_path)}${esc(a.label)}</button>`).join('');
+  $('jump').innerHTML = state.account ? renderJump() : '';
   $('views').innerHTML = VIEWS.map(v =>
     `<button class="${v.key === state.view ? 'active' : ''}" data-view="${v.key}">${v.label}</button>`).join('');
 
@@ -342,6 +361,11 @@ $('app').addEventListener('submit', async e => {
   const form = e.target;
   // 作る のチャット送信
   if (form.dataset.form === 'st-send') return studioSend(form);
+  // Manusのプロジェクト URL の保存
+  if (form.dataset.form === 'sg-manus-url') {
+    try { await saveManusUrl(form); state.error = ''; } catch (err) { state.error = err.message; }
+    return render();
+  }
   // 投稿の記録 のメモ
   if (form.dataset.form === 'rc-note') {
     try { await saveRecordNote(form); state.error = ''; } catch (err) { state.error = err.message; }
