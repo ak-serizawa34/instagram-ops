@@ -1,0 +1,32 @@
+# Supabase（無料プラン）が、しばらく使われないと止まるのを防ぐ。
+# 毎日1回データベースに問い合わせる。あわせて、この定期実行そのものを有効にし直す
+# （GitHubは、リポジトリに60日動きがないと定期実行を止めるため）。
+name: keepalive
+
+on:
+  schedule:
+    - cron: "17 21 * * *"   # 毎日 6:17（日本時間）
+  workflow_dispatch:         # 手動でも実行できる
+
+permissions:
+  actions: write             # 定期実行を有効にし直すため
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supabaseに問い合わせる
+        env:
+          # 画面（docs/config.js）と同じ、公開してよい anon キー
+          URL: https://fesasskyvogpmifxhxoa.supabase.co
+          ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlc2Fzc2t5dm9ncG1pZnhoeG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMDgxNDcsImV4cCI6MjEwNzY4NDE0N30.eaZMcw6MmPnz-AAVDz_BKXhleLY1ic5mdcMsh5MgUIA
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/rest/v1/accounts?select=id&limit=1" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON")
+          echo "Supabase: $code"
+          test "$code" = "200"
+
+      - name: 定期実行を有効にし直す
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keepalive.yml/enable"
