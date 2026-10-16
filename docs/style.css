@@ -173,6 +173,7 @@ textarea { min-height: 72px; resize: vertical; }
 .bubble.me { align-self: flex-end; background: var(--ink); color: var(--paper); border-bottom-right-radius: 4px; }
 .bubble.ai { align-self: flex-start; background: var(--soft); border-bottom-left-radius: 4px; }
 .bubble.thinking { color: var(--muted); animation: pulse 1.4s ease-in-out infinite; }
+.bubble.waiting { color: var(--muted); background: none; border: 1px dashed var(--line); }
 @keyframes pulse { 50% { opacity: .45; } }
 .hint { color: var(--muted); font-size: 13px; line-height: 1.8; margin: auto 0; text-align: center; }
 .photo-tray { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }

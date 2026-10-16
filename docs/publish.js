@@ -10,7 +10,7 @@ const publish = {
 };
 
 const LOG_LABEL = {
-  created: '作成', edited: '手直し', approved: '承認', returned: '差し戻し', posted: '投稿済みにした',
+  created: '作成', requested: 'AIへの依頼', drafted: 'AIが下書き', edited: '手直し', approved: '承認', returned: '差し戻し', posted: '投稿済みにした',
 };
 
 function renderPublish() {

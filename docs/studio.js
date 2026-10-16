@@ -47,7 +47,10 @@ function renderStudio() {
 function renderChat() {
   const p = studio.post;
   const log = p.chat.map(m => `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${esc(m.text)}</div>`).join('');
-  const thinking = studio.sending ? '<div class="bubble ai thinking">考えています…</div>' : '';
+  const waiting = p.chat.length && p.chat[p.chat.length - 1].pending;
+  const thinking = studio.sending
+    ? `<div class="bubble ai thinking">${APP_CONFIG.aiMode === 'claude-code' ? '依頼を送っています…' : '考えています…'}</div>`
+    : waiting ? '<div class="bubble ai waiting">依頼を受け付けました。Claude Codeで作業すると、ここに返事と下書きが出ます。</div>' : '';
   const empty = !p.chat.length && !studio.sending
     ? '<p class="hint">写真を添えて、作りたい投稿を伝えてください。<br>例：「この3枚で、カルーセルを5ページ。世界観が伝わるように」</p>' : '';
   const thumbs = p.photos.map((path, i) => `
@@ -253,6 +256,20 @@ async function studioSend(form) {
     studio.post.chat = [...studio.post.chat, { role: 'user', text: message }];
     studio.sending = true;
     render();
+
+    // Claude Code方式：依頼としてためておき、芹澤さんのClaude Codeが処理して下書きを書き込む
+    if (APP_CONFIG.aiMode === 'claude-code') {
+      const chat = studio.post.chat.map((m, i) =>
+        i === studio.post.chat.length - 1 ? { ...m, pending: true, by: state.myEmail } : m);
+      const updated = check(await db.from('posts').update({ chat }).eq('id', studio.post.id).select('*').single());
+      await logPost(studio.post.id, 'requested', message);
+      replacePost(updated);
+      openStudio(updated);
+      studio.sending = false;
+      render();
+      return;
+    }
+
     const { data, error } = await db.functions.invoke('studio-ai', { body: { post_id: studio.post.id, message } });
     if (error) {
       let msg = error.message;
