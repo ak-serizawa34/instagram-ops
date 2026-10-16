@@ -56,6 +56,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 36px 16px 96px; }
 /* ---- アイコン ---- */
 .avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; object-fit: cover; background: var(--soft);
   display: inline-grid; place-items: center; color: var(--muted); font-family: var(--mincho); font-weight: 700; font-size: 16px; }
+img.avatar { border: 1px solid var(--line); }  /* 白いアイコンが背景に溶けないように */
 
 /* ---- 選んでいるアカウント ---- */
 .profile { display: flex; align-items: center; gap: 20px; margin-bottom: 44px; }
