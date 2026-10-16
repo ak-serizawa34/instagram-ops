@@ -9,9 +9,19 @@ const VIEWS = [
 ];
 
 const state = {
-  accounts: [], account: null, view: 'bench',
+  accounts: [], account: null, view: 'create',
   bench: [], priority: 'すべて', editing: null, armed: null, error: '',
+  posts: [],          // 選んでいるアカウントの投稿（作る・公開する で共有）
 };
+
+// studio.js・publish.js が登録するボタンの処理（data-act の名前 → 関数）
+const ACTIONS = {};
+
+const STATUS_LABEL = { draft: '下書き', approved: '確認済み', posted: '投稿済み' };
+
+function account() {
+  return state.accounts.find(a => a.id === state.account);
+}
 
 const $ = id => document.getElementById(id);
 
@@ -64,6 +74,7 @@ $('logout').addEventListener('click', () => db.auth.signOut());
 db.auth.onAuthStateChange((_event, session) => {
   $('login').hidden = !!session;
   $('app').hidden = !session;
+  state.me = session?.user?.id || null;
   if (session && !state.accounts.length) start();
   if (!session) state.accounts = [];
 });
@@ -73,9 +84,72 @@ async function start() {
     // RLSにより、メンバーになっているアカウントだけが返ってくる
     state.accounts = check(await db.from('accounts').select('id, label, handle, avatar_path').order('sort'));
     state.account = state.accounts.length ? state.accounts[0].id : null;
-    if (state.account) await loadBench();
+    if (state.account) await loadAccountData();
   } catch (e) { state.error = e.message; }
   render();
+}
+
+async function loadAccountData() {
+  await Promise.all([loadBench(), loadPosts()]);
+}
+
+// ---- 投稿 ----
+
+async function loadPosts() {
+  state.posts = check(await db.from('posts')
+    .select('*, creator:profiles!posts_created_by_fkey(email), updater:profiles!posts_updated_by_fkey(email)')
+    .eq('account_id', state.account)
+    .order('created_at', { ascending: false }));
+}
+
+async function logPost(postId, action, note) {
+  check(await db.from('post_logs').insert({ post_id: postId, account_id: state.account, action, note: note || null }));
+}
+
+// 写真（非公開の media バケット）を、署名付きURLで読み込んで使い回す
+const photoCache = new Map(); // path -> { url, img: Promise<HTMLImageElement> }
+
+async function photoUrls(paths) {
+  const missing = paths.filter(p => !photoCache.has(p));
+  if (missing.length) {
+    const signed = check(await db.storage.from('media').createSignedUrls(missing, 3600));
+    signed.forEach((s, i) => {
+      const img = new Promise((resolve, reject) => {
+        const el = new Image();
+        el.crossOrigin = 'anonymous'; // canvas からJPEGを書き出せるように
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = s.signedUrl;
+      });
+      photoCache.set(missing[i], { url: s.signedUrl, img });
+    });
+  }
+  return paths.map(p => photoCache.get(p).url);
+}
+
+async function photoImage(path) {
+  await photoUrls([path]);
+  return photoCache.get(path).img.catch(() => null);
+}
+
+// 投稿の1ページを canvas に描く
+async function drawSlide(canvas, post, i) {
+  const slide = post.slides[i];
+  if (!slide) return;
+  const path = slide.photo >= 0 ? post.photos[slide.photo] : null;
+  const image = path ? await photoImage(path) : null;
+  await Templates.draw(canvas, {
+    template: slide.template, format: post.format === 'story' ? 'story' : 'feed',
+    image, text: slide.text, sub: account()?.label, size: slide.size, align: slide.align,
+  });
+}
+
+// render のあと、data-post と data-slide を持つ canvas を描く
+function drawCanvases() {
+  document.querySelectorAll('canvas[data-post][data-slide]').forEach(c => {
+    const post = c.dataset.post === 'studio' ? studio.post : state.posts.find(p => p.id === c.dataset.post);
+    if (post) drawSlide(c, post, Number(c.dataset.slide));
+  });
 }
 
 // ---- ベンチマーク ----
@@ -117,8 +191,14 @@ function render() {
     $('main').innerHTML = err + '<p class="empty">見られるアカウントがありません。管理者にメンバー登録を依頼してください。</p>';
     return;
   }
-  $('main').innerHTML = err + renderProfile() + (state.view === 'bench' ? renderBench()
-    : '<div class="placeholder">この画面は準備中です</div>');
+  const body = {
+    create: () => renderStudio(),
+    publish: () => renderPublish(),
+    bench: () => renderBench(),
+  }[state.view];
+  $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
+  drawCanvases();
+  if (state.view === 'create') afterStudioRender();
 }
 
 // 選んでいる自分たちのアカウント（アイコン・名前・ハンドル → Instagramへ）
@@ -228,9 +308,13 @@ $('app').addEventListener('click', async e => {
   if (!t || t.id === 'logout' || (t.form && t.type === 'submit')) return;
   state.error = '';
   try {
-    if (t.dataset.account) {
+    if (ACTIONS[t.dataset.act]) {
+      // 作る・公開する のボタン。false を返したら描き直さない
+      if (await ACTIONS[t.dataset.act](t) === false) return;
+    } else if (t.dataset.account) {
       state.account = t.dataset.account; state.editing = null; state.armed = null;
-      await loadBench();
+      studio.post = null; publish.openId = null;
+      await loadAccountData();
     } else if (t.dataset.view) {
       state.view = t.dataset.view;
     } else if (t.dataset.priority) {
@@ -252,6 +336,8 @@ $('app').addEventListener('click', async e => {
 $('app').addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target;
+  // 作る のチャット送信
+  if (form.dataset.form === 'st-send') return studioSend(form);
   const f = Object.fromEntries(new FormData(form));
   const fields = {
     priority: f.priority || null, name: f.name.trim(), handle: f.handle.trim(), url: f.url.trim(),
@@ -263,4 +349,14 @@ $('app').addEventListener('submit', async e => {
     state.editing = null; state.error = '';
   } catch (err) { state.error = err.message; }
   render();
+});
+
+// 作る の入力欄（文字・キャプションなど）は、打つたびに全体を描き直さず、その場で反映する
+$('app').addEventListener('input', e => {
+  if (e.target.dataset.st) studioInput(e.target);
+});
+
+// 作る の写真の追加
+$('app').addEventListener('change', e => {
+  if (e.target.dataset.st === 'upload') studioUpload(e.target);
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ナガレ</title>
+<title>Insta Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
 <body>
 <div id="login" class="login" hidden>
   <form id="login-form">
-    <h1 class="logo">ナガレ</h1>
+    <h1 class="logo">Insta Studio</h1>
     <label>メールアドレス<input type="email" name="email" required autocomplete="email"></label>
     <button class="btn primary" type="submit">ログイン用のリンクを送る</button>
     <p class="muted" id="login-msg"></p>
@@ -22,7 +22,7 @@
 <div id="app" hidden>
   <header class="site-header">
     <div class="bar">
-      <span class="logo">ナガレ</span>
+      <span class="logo">Insta Studio</span>
       <nav class="accounts" id="accounts"></nav>
       <button class="link" id="logout">ログアウト</button>
     </div>
@@ -33,6 +33,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
+<script src="templates.js"></script>
 <script src="app.js"></script>
+<script src="studio.js"></script>
+<script src="publish.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-# ナガレ（instagram-ops）
+# Insta Studio（instagram-ops）
 
-ナガレ（Instagram運用アプリ）。仕組みの説明は [設計書.md](設計書.md) を読んでください。
+Insta Studio（Instagram運用アプリ）。仕組みの説明は [設計書.md](設計書.md) を読んでください。
 
 ## 公開の手順
 
