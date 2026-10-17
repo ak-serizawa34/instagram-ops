@@ -206,7 +206,7 @@ function render() {
     records: () => renderRecords(),
   }[state.view];
   $('main').innerHTML = err + renderProfile() + (body ? body() : '<div class="placeholder">この画面は準備中です</div>');
-  if (state.view === 'strategy') showPreviews().catch(() => {});
+  if (state.view === 'strategy' || state.view === 'records') showPreviews().catch(() => {});
 }
 
 // 選んでいる自分たちのアカウント（アイコン・名前・ハンドル → Instagramへ）

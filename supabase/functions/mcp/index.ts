@@ -93,9 +93,63 @@ const TOOLS = [
         hashtags: { type: "string" },
         permalink: { type: "string", description: "公開した投稿のURL" },
         notes: { type: "string", description: "メモ（ページの中身の要約、反応など）" },
+        questions: {
+          type: "array", maxItems: 12,
+          description: "利用者に決めてもらうこと（アプリの確認画面に出る）。渡すと前の答えは消え、「答え待ち」になる。決めることがなくなったら空の配列を渡す",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "質問の短い識別子（例：q1）" },
+              title: { type: "string", description: "何を決めるか（短く）" },
+              why: { type: "string", description: "なぜ聞くか・確かめていないこと" },
+              kind: { type: "string", enum: ["single", "multi", "text"], description: "single＝1つ選ぶ、multi＝いくつも選ぶ、text＝書いてもらう" },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { key: { type: "string" }, label: { type: "string" }, detail: { type: "string", description: "補足（その案の文面など）" } },
+                  required: ["key", "label"], additionalProperties: false,
+                },
+              },
+            },
+            required: ["id", "title", "kind"], additionalProperties: false,
+          },
+        },
+        decided: { type: "array", items: { type: "string" }, description: "これまでに決まったこと（全文。渡すと置き換わる）" },
       },
       required: ["account", "status"], additionalProperties: false,
     },
+  },
+  {
+    name: "set_post_images",
+    description: "投稿の画像（確認画面で見せる写し）を入れる。前の画像と置き換わる。Manusは Canva で書き出した画像のURL（image_urls）、Claude Code は pc/studio.mjs images で PC の画像ファイルを渡す（AIが画像の中身を読む必要はない）",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: ACCOUNT,
+        post_id: { type: "string" },
+        image_urls: { type: "array", items: { type: "string" }, maxItems: 10, description: "Canvaで書き出した画像のURL（ページ順）" },
+        images: {
+          type: "array", maxItems: 10, description: "画像そのもの（ページ順）。pc/studio.mjs が使う",
+          items: { type: "object", properties: { type: { type: "string", enum: ["image/jpeg", "image/png"] }, base64: { type: "string" } }, required: ["type", "base64"], additionalProperties: false },
+        },
+      },
+      required: ["account", "post_id"], additionalProperties: false,
+    },
+  },
+  {
+    name: "get_post_review",
+    description: "投稿の確認の中身を読む：今の案（キャプション・ハッシュタグ）、決まったこと、決めることと利用者の答え、メモ。答えを受けて案を直す前に読む",
+    inputSchema: {
+      type: "object",
+      properties: { account: ACCOUNT, post_id: { type: "string" } },
+      required: ["account", "post_id"], additionalProperties: false,
+    },
+  },
+  {
+    name: "take_answered_reviews",
+    description: "利用者が答えを送った投稿を受け取り、「AIが直しています」にする（見張り役が使う）。直し終わったら record_post で questions・decided・caption を渡すと「答え待ち」に戻る",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "add_benchmark",
@@ -357,7 +411,80 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     return `見本画像を${previews.length}枚保存しました（${prev.title}）。Insta Studio の戦略タブで見られます`;
   },
 
-  async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes }, client) {
+  async set_post_images({ account: id, post_id, image_urls, images }, client) {
+    await account(id, client);
+    const { data: post } = await db.from("posts").select("id, photos").eq("id", post_id).eq("account_id", id).maybeSingle();
+    if (!post) throw new Error("その投稿はありません。list_posts で post_id を確認してください");
+    const files: { type: string; bytes: ArrayBuffer | Uint8Array }[] = [];
+    for (const u of image_urls ?? []) {
+      const url = new URL(u);
+      if (url.protocol !== "https:" || !PREVIEW_HOSTS.some((h) => h.test(url.hostname))) {
+        throw new Error(`Canvaで書き出した画像のURLを渡してください（${url.hostname} は受け付けません）`);
+      }
+      const res = await fetch(url);
+      const type = res.headers.get("content-type") ?? "";
+      if (!res.ok || !/^image\/(png|jpeg)/.test(type)) throw new Error(`${files.length + 1}枚目の画像を取得できませんでした`);
+      files.push({ type, bytes: await res.arrayBuffer() });
+    }
+    for (const im of images ?? []) {
+      files.push({ type: im.type, bytes: Uint8Array.from(atob(im.base64), (c) => c.charCodeAt(0)) });
+    }
+    if (!files.length) throw new Error("image_urls か images を渡してください");
+    // 同じ名前で上書きしない（表示のキャッシュに古い画像が残るため）。日時つきの名前で置き、前の画像は消す
+    const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+    const paths: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const path = `${id}/posts/${post_id}/${stamp}_${i + 1}.${files[i].type.includes("png") ? "png" : "jpg"}`;
+      const { error } = await db.storage.from("media").upload(path, files[i].bytes, { contentType: files[i].type });
+      if (error) throw new Error(error.message);
+      paths.push(path);
+    }
+    const old = (post.photos ?? []) as string[];
+    const { error } = await db.from("posts")
+      .update({ photos: paths, updated_by: client.user, updated_at: new Date().toISOString() }).eq("id", post_id);
+    if (error) throw new Error(error.message);
+    if (old.length) await db.storage.from("media").remove(old);
+    return `画像を${paths.length}枚入れました。Insta Studio の投稿の記録で見られます`;
+  },
+
+  async get_post_review({ account: id, post_id }, client) {
+    await account(id, client);
+    const { data: p } = await db.from("posts").select("*").eq("id", post_id).eq("account_id", id).maybeSingle();
+    if (!p) throw new Error("その投稿はありません");
+    const qs = (p.questions ?? []) as any[];
+    const ans = (p.answers ?? {}) as Record<string, unknown>;
+    const label = (q: any, k: string) => {
+      const o = (q.options ?? []).find((x: any) => x.key === k);
+      return o ? `${k}（${o.label}${o.detail ? "：" + o.detail : ""}）` : k;
+    };
+    const answerText = (q: any) => {
+      const a = ans[q.id];
+      if (a == null || a === "" || (Array.isArray(a) && !a.length)) return "（答えなし）";
+      if (Array.isArray(a)) return a.map((k) => label(q, k)).join("、");
+      return q.kind === "text" ? String(a) : label(q, String(a));
+    };
+    return [
+      `# ${p.title ?? "無題"}（post_id: ${p.id}）`,
+      `状態：${p.status}／確認：${p.review_state ?? "なし"}${p.answered_at ? `（答え ${p.answered_at.slice(0, 16)}）` : ""}`,
+      `## 今の案：キャプション\n${p.caption ?? "（なし）"}`,
+      `## 今の案：ハッシュタグ\n${p.hashtags ?? "（なし）"}`,
+      `## 画像\n${((p.photos ?? []) as string[]).length}枚`,
+      `## 決まったこと\n${((p.decided ?? []) as string[]).map((d) => "- " + d).join("\n") || "（なし）"}`,
+      `## 決めることと答え\n${qs.map((q) => `- ${q.id} ${q.title}\n  答え：${answerText(q)}`).join("\n") || "（なし）"}`,
+      `## 選択肢にないこと（メモ）\n${p.answer_note || "（なし）"}`,
+    ].join("\n\n");
+  },
+
+  async take_answered_reviews(_a, client) {
+    let q = db.from("posts").select("id, account_id, title").eq("review_state", "answered");
+    if (client.accounts) q = q.in("account_id", client.accounts);
+    const { data } = await q.order("answered_at");
+    if (!data?.length) return "[]";
+    await db.from("posts").update({ review_state: "working" }).in("id", data.map((p) => p.id));
+    return JSON.stringify(data.map((p) => ({ account: p.account_id, post_id: p.id, title: p.title })));
+  },
+
+  async record_post({ account: id, post_id, title, format_name, kind, status, caption, hashtags, permalink, notes, questions, decided }, client) {
     await account(id, client);
     let section: string | null = null;
     if (format_name) {
@@ -372,6 +499,16 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
     if (hashtags !== undefined) fields.hashtags = hashtags;
     if (permalink !== undefined) fields.permalink = permalink;
     if (notes !== undefined) fields.notes = notes;
+    if (decided !== undefined) fields.decided = decided;
+    // 決めることを渡したら、前の答えを消して「答え待ち」にする（空なら確認は終わり）
+    if (questions !== undefined) {
+      Object.assign(fields, {
+        questions, answers: {}, answer_note: null, answered_at: null,
+        review_state: questions.length ? "asking" : null,
+      });
+      if (post_id) fields.revised_at = new Date().toISOString();
+    }
+    if (post_id) { fields.updated_by = client.user; fields.updated_at = new Date().toISOString(); }
     if (status === "approved") { fields.approved_by = client.user; fields.approved_at = new Date().toISOString(); }
     if (status === "posted") fields.posted_at = new Date().toISOString();
 

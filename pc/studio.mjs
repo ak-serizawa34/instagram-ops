@@ -4,6 +4,7 @@
 //   node pc/studio.mjs mcp <道具の名前> [引数のJSONファイル]  … コネクタの道具を呼ぶ（例：get_account_design, add_benchmark）
 //   node pc/studio.mjs doc <account> <section> <JSONファイル>   … 戦略タブの1項目に新しい版を足す（save_design の近道）
 //   node pc/studio.mjs avatar-url <account> <handle>            … アイコンの取り込み口のURL（末尾の src= に画像URLを足す）
+//   node pc/studio.mjs images <account> <post_id> <画像ファイル…> … 投稿の確認画面に画像を入れる（ページ順。AIは画像を読まない）
 //
 // 合言葉は、リポジトリに入らない .env の MCP_TOKEN_CLAUDE を使う。
 
@@ -50,10 +51,18 @@ async function avatarUrl(account, handle) {
   console.log(`${BASE}/functions/v1/avatar-intake?key=${token()}&account=${encodeURIComponent(account)}&handle=${encodeURIComponent(handle)}&src=`);
 }
 
+async function images(account, postId, ...files) {
+  if (!files.length) throw new Error('画像ファイルを渡してください');
+  await call('set_post_images', {
+    account, post_id: postId,
+    images: files.map(f => ({ type: /\.png$/i.test(f) ? 'image/png' : 'image/jpeg', base64: readFileSync(f).toString('base64') })),
+  });
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const run = { mcp, doc, 'avatar-url': avatarUrl }[cmd];
+const run = { mcp, doc, 'avatar-url': avatarUrl, images }[cmd];
 if (!run) {
-  console.log('使い方：node pc/studio.mjs mcp <道具> [JSON] | doc <account> <section> <JSON> | avatar-url <account> <handle>');
+  console.log('使い方：node pc/studio.mjs mcp <道具> [JSON] | doc <account> <section> <JSON> | avatar-url <account> <handle> | images <account> <post_id> <画像…>');
   process.exit(1);
 }
 run(...args).catch(e => { console.error(e.message); process.exitCode = 1; });
