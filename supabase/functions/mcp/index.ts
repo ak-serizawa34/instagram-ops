@@ -135,6 +135,32 @@ const TOOLS = [
     },
   },
   {
+    name: "record_benchmark_stats",
+    description: "ベンチマークの数字（フォロワー数・フォロー中・投稿数）を、いつ時点かと一緒に記録する。複数件まとめてよい。履歴として積み上がり、一覧には最新の数字が出る。InstagramのプロフィールやManusのInstagram連携で確かめた数字だけを入れる",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: ACCOUNT,
+        items: {
+          type: "array", minItems: 1, maxItems: 50,
+          items: {
+            type: "object",
+            properties: {
+              handle: { type: "string" },
+              followers: { type: "integer", minimum: 0 },
+              following: { type: "integer", minimum: 0 },
+              posts: { type: "integer", minimum: 0 },
+            },
+            required: ["handle"], additionalProperties: false,
+          },
+        },
+        captured_at: { type: "string", description: "いつ時点の数字か（ISO形式の日付・日時）。省略すると今" },
+        source: { type: "string", description: "どこで取ったか（例：Instagramのプロフィール）" },
+      },
+      required: ["account", "items"], additionalProperties: false,
+    },
+  },
+  {
     name: "save_template_preview",
     description: "フォーマットのCanvaテンプレートを作った・直したあとに使う。Canvaで書き出した各ページの画像URL（PNG/JPG、ページ順）を渡すと、Insta Studioに見本画像として保存し、テンプレートのリンクも記録する（前の版は履歴に残る）",
     inputSchema: {
@@ -212,11 +238,11 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
 
   async get_benchmarks({ account: id, priority }, client) {
     await account(id, client);
-    let q = db.from("benchmarks").select("priority, name, handle, url, area, feature, adopt, caution").eq("account_id", id);
+    let q = db.from("benchmarks").select("priority, name, handle, url, area, feature, adopt, caution, followers, stats_at").eq("account_id", id);
     if (priority) q = q.eq("priority", priority);
     const { data } = await q.order("priority", { nullsFirst: false });
     return (data ?? []).map((b) =>
-      `- [${b.priority ?? "－"}] ${b.name} ${b.handle ?? ""}｜${b.area ?? ""}\n  特徴：${b.feature ?? ""}\n  取り入れる点：${b.adopt ?? ""}\n  注意点：${b.caution ?? ""}`).join("\n");
+      `- [${b.priority ?? "－"}] ${b.name} ${b.handle ?? ""}｜${b.area ?? ""}${b.followers != null ? `｜フォロワー${b.followers}（${String(b.stats_at).slice(0, 10)}時点）` : ""}\n  特徴：${b.feature ?? ""}\n  取り入れる点：${b.adopt ?? ""}\n  注意点：${b.caution ?? ""}`).join("\n");
   },
 
   async list_posts({ account: id, limit }, client) {
@@ -277,6 +303,30 @@ const run: Record<string, (a: any, client: Client) => Promise<string>> = {
       .update({ ...update, updated_by: client.user, updated_at: new Date().toISOString() }).eq("id", row.id);
     if (error) throw new Error(error.message);
     return `「${row.name}」（@${h}）を更新しました（${Object.keys(update).join("・")}）`;
+  },
+
+  async record_benchmark_stats({ account: id, items, captured_at, source }, client) {
+    await account(id, client);
+    const at = captured_at ? new Date(captured_at) : new Date();
+    if (isNaN(at.getTime())) throw new Error("captured_at の日付が読めません");
+    const done: string[] = [], missing: string[] = [];
+    for (const it of items) {
+      const h = normalizeHandle(it.handle);
+      const row = await findBenchmark(id, h);
+      if (!row) { missing.push("@" + h); continue; }
+      const { error } = await db.from("benchmark_stats").insert({
+        benchmark_id: row.id, account_id: id, followers: it.followers ?? null, following: it.following ?? null,
+        posts: it.posts ?? null, captured_at: at.toISOString(), source: source ?? null, created_by: client.user,
+      });
+      if (error) throw new Error(error.message);
+      // 一覧の「最新」は、今より新しい時点のときだけ書き換える（古い記録を後から足しても上書きしない）
+      const { data: cur } = await db.from("benchmarks").select("stats_at").eq("id", row.id).single();
+      if (!cur?.stats_at || new Date(cur.stats_at) <= at) {
+        await db.from("benchmarks").update({ followers: it.followers ?? null, posts_count: it.posts ?? null, stats_at: at.toISOString() }).eq("id", row.id);
+      }
+      done.push(`@${h}${it.followers != null ? "（フォロワー" + it.followers + "）" : ""}`);
+    }
+    return `${at.toISOString().slice(0, 10)}時点の数字を${done.length}件記録しました：${done.join("、")}${missing.length ? `\n登録されていないため記録しなかったもの：${missing.join("、")}` : ""}`;
   },
 
   async save_template_preview({ account: id, section, image_urls, canva_url, note }, client) {
