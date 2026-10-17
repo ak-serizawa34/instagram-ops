@@ -281,7 +281,7 @@ function renderCard(b, i) {
         <div class="card-id">
           <h3 class="card-name">${name}</h3>
           <div class="card-handle">${esc(b.handle)}</div>
-          ${b.followers != null ? `<div class="card-stats">フォロワー <strong>${b.followers.toLocaleString('ja-JP')}</strong>${b.posts_count != null ? `　投稿 ${b.posts_count.toLocaleString('ja-JP')}` : ''}<span>${esc(fmt(b.stats_at).slice(0, 10))}時点</span></div>` : ''}
+          ${b.followers != null ? `<div class="card-stats"><em>フォロワー <strong>${b.followers.toLocaleString('ja-JP')}</strong></em>${b.posts_count != null ? `　<em>投稿 ${b.posts_count.toLocaleString('ja-JP')}</em>` : ''}<span>${esc(fmt(b.stats_at).slice(0, 10))}時点</span></div>` : ''}
         </div>
         ${badge}
       </div>
